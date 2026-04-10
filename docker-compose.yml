@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: demre
+      POSTGRES_USER: demre
+      POSTGRES_PASSWORD: demre_secret
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demre"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+      - ./.env
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+      - ./Eingangsrechnungen:/app/incoming_invoices
+
+  frontend:
+    build: ./frontend
+    ports: ["5173:5173"]
+    depends_on: [backend]
+    environment:
+      VITE_API_URL: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  pgdata:
