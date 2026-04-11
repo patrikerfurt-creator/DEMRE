@@ -3,14 +3,10 @@ services:
     image: postgres:16
     restart: always
     env_file: .env.prod
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-demre}
-      POSTGRES_USER: ${POSTGRES_USER:-demre}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U demre"]
       interval: 5s
       timeout: 5s
       retries: 10
