@@ -2,9 +2,10 @@ services:
   db:
     image: postgres:16
     restart: always
+    env_file: .env.prod
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:-demre}
+      POSTGRES_USER: ${POSTGRES_USER:-demre}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
