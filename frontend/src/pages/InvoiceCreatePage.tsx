@@ -49,9 +49,13 @@ function calcItem(item: LineItem) {
   return { net, vatAmt, gross: net + vatAmt }
 }
 
+function generateKey(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2)
+}
+
 function newItem(): LineItem {
   return {
-    _key: crypto.randomUUID(),
+    _key: generateKey(),
     article_id: '',
     article_name: '',
     description: '',
