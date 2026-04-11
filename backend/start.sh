@@ -12,7 +12,7 @@ try:
         port=5432,
         dbname='demre',
         user='demre',
-        password='demre_secret',
+        password=os.environ.get('POSTGRES_PASSWORD', ''),
         connect_timeout=3
     )
     conn.close()
@@ -29,7 +29,7 @@ echo "Running migrations..."
 # If tables already exist but alembic_version is missing, stamp as head to avoid re-running
 python - <<'EOF'
 import psycopg2, sys
-conn = psycopg2.connect(host='db', port=5432, dbname='demre', user='demre', password='demre_secret')
+conn = psycopg2.connect(host='db', port=5432, dbname='demre', user='demre', password=os.environ.get('POSTGRES_PASSWORD', ''))
 cur = conn.cursor()
 cur.execute("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users')")
 tables_exist = cur.fetchone()[0]
