@@ -74,48 +74,49 @@ docker exec -it demre-backend-1 python create_admin.py
 
 ---
 
-## Produktions-Deployment (Server: appsrv)
+## Produktions-Deployment (Linux Cloud-Server)
+
+### Server-Infos
+- **IP:** `87.106.219.148`
+- **User:** `patrik` (sudo-Rechte)
+- **Pfad:** `/opt/DEMRE`
+- **URL:** `http://87.106.219.148:8081/` (Port 8081)
+- Docker-Befehle benötigen `sudo`
+
+### Erstinstallation
 ```bash
 # 1. Repository klonen
-cd /opt && git clone git@github.com:patrikerfurt-creator/DEMRE.git && cd DEMRE
+cd /opt && sudo git clone https://github.com/patrikerfurt-creator/DEMRE.git && cd DEMRE
 
 # 2. Umgebungsvariablen setzen
-cp .env.prod.example .env.prod
+sudo cp .env.prod.example .env.prod
+sudo nano .env.prod
 # Pflichtfelder: POSTGRES_PASSWORD, DATABASE_URL, DATABASE_URL_SYNC, SECRET_KEY
 # SECRET_KEY erzeugen: openssl rand -hex 32
+# DATABASE_URL=postgresql+asyncpg://demre:PASSWORT@db:5432/demre
+# DATABASE_URL_SYNC=postgresql+psycopg2://demre:PASSWORT@db:5432/demre
 
 # 3. Ordner anlegen und starten
-mkdir -p storage/invoices Eingangsrechnungen
-docker compose -f docker-compose.prod.yml up -d --build
+sudo mkdir -p storage/invoices Eingangsrechnungen
+sudo docker compose -f docker-compose.prod.yml up -d --build
 
 # 4. Admin-User anlegen
-docker compose -f docker-compose.prod.yml exec backend python create_admin.py
-
-# 5. Als Systemdienst (auto-start nach Reboot)
-# Datei: /etc/systemd/system/demre.service  (siehe unten)
-systemctl enable demre && systemctl start demre
+sudo docker compose -f docker-compose.prod.yml exec backend python create_admin.py
 ```
 
-### systemd-Service `/etc/systemd/system/demre.service`
-```ini
-[Unit]
-Description=DEMRE Rechnungsverwaltung
-After=docker.service
-Requires=docker.service
-
-[Service]
-WorkingDirectory=/opt/DEMRE
-ExecStart=docker compose -f docker-compose.prod.yml up
-ExecStop=docker compose -f docker-compose.prod.yml down
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
+### Updates einspielen
+```bash
+cd /opt/DEMRE
+sudo git pull
+sudo docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-### URL im Netz
-- Produktion: `http://192.168.161.108/` (Port 80, kein Port im URL nötig)
-- Kein IP-Hardcoding im Code nötig — Frontend nutzt relative URLs (`/api/v1`)
+### Logs prüfen
+```bash
+sudo docker compose -f docker-compose.prod.yml logs backend --tail=40
+sudo docker compose -f docker-compose.prod.yml logs db --tail=20
+sudo docker compose -f docker-compose.prod.yml ps
+```
 
 ---
 
@@ -179,12 +180,7 @@ docker exec demre-db-1 psql -U demre -d demre -c \
 - **Rechnungen bearbeiten**: Nur im Status `draft` — Backend wirft HTTP 400 bei anderen Status
 - **Vite Dev-Server**: Nur für Entwicklung. Produktion nutzt `Dockerfile.prod` (nginx + statischer Build)
 - **PDF-Speicherort**: `storage/invoices/*.pdf` — in `.gitignore`, nicht im Repository
-
----
-
-## Updates einspielen (Produktion)
-```bash
-cd /opt/DEMRE
-git pull
-docker compose -f docker-compose.prod.yml up -d --build
-```
+- **`crypto.randomUUID()` nur HTTPS**: Auf HTTP (Produktion ohne TLS) nicht verfügbar → `Date.now().toString(36) + Math.random().toString(36).slice(2)` verwenden
+- **Docker Compose `env_file` vs YAML-Interpolation**: `env_file` lädt Variablen in den Container, aber `${VAR}` im YAML wird aus der Host-Umgebung gelesen — deshalb keine `${POSTGRES_USER}` im Healthcheck verwenden, sondern Werte hardcoden
+- **`start.sh` DB-Verbindung**: Nutzt `os.environ.get('POSTGRES_PASSWORD', '')` — nie Passwörter hardcoden
+- **`.env.prod` niemals committen**: Steht in `.gitignore`; Vorlage ist `.env.prod.example`
