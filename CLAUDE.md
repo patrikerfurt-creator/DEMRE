@@ -182,5 +182,23 @@ docker exec demre-db-1 psql -U demre -d demre -c \
 - **PDF-Speicherort**: `storage/invoices/*.pdf` — in `.gitignore`, nicht im Repository
 - **`crypto.randomUUID()` nur HTTPS**: Auf HTTP (Produktion ohne TLS) nicht verfügbar → `Date.now().toString(36) + Math.random().toString(36).slice(2)` verwenden
 - **Docker Compose `env_file` vs YAML-Interpolation**: `env_file` lädt Variablen in den Container, aber `${VAR}` im YAML wird aus der Host-Umgebung gelesen — deshalb keine `${POSTGRES_USER}` im Healthcheck verwenden, sondern Werte hardcoden
-- **`start.sh` DB-Verbindung**: Nutzt `os.environ.get('POSTGRES_PASSWORD', '')` — nie Passwörter hardcoden
+- **`start.sh` DB-Verbindung**: Nutzt `os.environ.get('POSTGRES_PASSWORD', '')` — `POSTGRES_PASSWORD` muss explizit in `backend/.env` gesetzt sein, auch wenn das Passwort bereits in `DATABASE_URL` steht
 - **`.env.prod` niemals committen**: Steht in `.gitignore`; Vorlage ist `.env.prod.example`
+
+---
+
+## Frontend-Formulare: bekannte Eigenheiten
+
+### Dezimalzahlen (Preise, Mengen)
+Alle Preis- und Mengenfelder verwenden `type="text"` mit `inputMode="decimal"` statt `type="number"`. Damit werden Komma-Dezimaltrennzeichen (`19,90`) korrekt akzeptiert. Die Hilfsfunktion `normalizeDecimal(v)` (in `ArticleListPage.tsx`) ersetzt `,` durch `.` vor dem `parseFloat`.
+
+### Dialog-Struktur (scrollbare Formulare)
+Lange Dialoge (Neuer Kunde, Neuer Artikel) nutzen ein `flex flex-col`-Layout: Header und Footer (`Abbrechen` / `Speichern`) sind fest verankert, nur die Felder scrollen. Das verhindert, dass der Speichern-Button außerhalb des sichtbaren Bereichs liegt.
+
+### Fehlerbehandlung in Mutationen
+Alle `onError`-Handler nutzen `formatApiError(err)` (definiert in `CustomerListPage.tsx` und `ArticleListPage.tsx`), das sowohl String-`detail` als auch Pydantic-v2-Array-`detail` korrekt anzeigt. Bei Zod-Validierungsfehlern im Frontend greift der `onInvalid`-Callback in `handleSubmit`.
+
+### Vertragsbearbeitung (`ContractDetailPage.tsx`)
+- **Vertragskopf bearbeiten**: Button „Bearbeiten" (Pencil-Icon) öffnet Dialog für start_date, end_date, billing_day, payment_terms_days, property_ref, notes
+- **Vertragsposition bearbeiten**: Pencil-Icon in der Aktionsspalte — nicht das Trash-Icon daneben
+- `is_active` einer Position kann im Bearbeitungs-Dialog auf Aktiv/Inaktiv gesetzt werden

@@ -69,6 +69,14 @@ export function CustomerListPage() {
   })
   const customerType = useWatch({ control, name: 'customer_type' })
 
+  function formatApiError(err: any): string {
+    const detail = err?.response?.data?.detail
+    if (!detail) return err?.message || 'Unbekannter Fehler'
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) return detail.map((e: any) => e.msg || JSON.stringify(e)).join(' | ')
+    return JSON.stringify(detail)
+  }
+
   const createMutation = useMutation({
     mutationFn: (data: FormData) => api.post('/customers', data),
     onSuccess: () => {
@@ -77,7 +85,7 @@ export function CustomerListPage() {
       toast({ title: 'Kunde erstellt' })
     },
     onError: (err: any) => {
-      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+      toast({ title: 'Fehler beim Speichern', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -90,7 +98,7 @@ export function CustomerListPage() {
       toast({ title: 'Kunde aktualisiert' })
     },
     onError: (err: any) => {
-      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+      toast({ title: 'Fehler beim Speichern', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -400,48 +408,144 @@ export function CustomerListPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl flex flex-col max-h-[90vh] p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <DialogTitle>{editing ? 'Kunde bearbeiten' : 'Neuer Kunde'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          <form
+              onSubmit={handleSubmit(onSubmit, (errs) => {
+                const fields = Object.keys(errs).join(', ')
+                toast({ title: 'Pflichtfelder fehlen', description: fields, variant: 'destructive' })
+              })}
+              className="flex flex-col flex-1 min-h-0"
+            >
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
 
-            {/* Typ-Auswahl */}
-            <div className="space-y-2">
-              <Label>Kundentyp</Label>
-              <div className="flex gap-2">
-                {(['weg', 'company', 'person'] as const).map((t) => (
-                  <label key={t} className={`flex-1 flex items-center justify-center gap-2 border rounded-lg px-3 py-2 cursor-pointer text-sm font-medium transition-colors ${customerType === t ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'}`}>
-                    <input type="radio" value={t} {...register('customer_type')} className="hidden" />
-                    {t === 'weg' ? 'WEG' : t === 'company' ? 'Firma' : 'Person'}
-                  </label>
-                ))}
+              {/* Typ-Auswahl */}
+              <div className="space-y-2">
+                <Label>Kundentyp</Label>
+                <div className="flex gap-2">
+                  {(['weg', 'company', 'person'] as const).map((t) => (
+                    <label key={t} className={`flex-1 flex items-center justify-center gap-2 border rounded-lg px-3 py-2 cursor-pointer text-sm font-medium transition-colors ${customerType === t ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'}`}>
+                      <input type="radio" value={t} {...register('customer_type')} className="hidden" />
+                      {t === 'weg' ? 'WEG' : t === 'company' ? 'Firma' : 'Person'}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* WEG */}
-            {customerType === 'weg' && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>WEG-Name *</Label>
-                  <Input {...register('company_name')} placeholder="WEG Musterstraße 17" />
+              {/* WEG */}
+              {customerType === 'weg' && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>WEG-Name *</Label>
+                    <Input {...register('company_name')} placeholder="WEG Musterstraße 17" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>c/o</Label>
+                    <Input {...register('address_line2')} placeholder="c/o Demme Immobilien Verwaltung GmbH" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2 col-span-2">
+                      <Label>Straße / Hausnummer</Label>
+                      <Input {...register('address_line1')} placeholder="Coventrystraße 32" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>PLZ</Label>
+                      <Input {...register('postal_code')} placeholder="65934" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Ort</Label>
+                      <Input {...register('city')} placeholder="Frankfurt am Main" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>E-Mail</Label>
+                      <Input type="email" {...register('email')} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Telefon</Label>
+                      <Input {...register('phone')} />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>c/o</Label>
-                  <Input {...register('address_line2')} placeholder="c/o Demme Immobilien Verwaltung GmbH" />
-                </div>
+              )}
+
+              {/* Firma */}
+              {customerType === 'company' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2 col-span-2">
+                    <Label>Firmenname *</Label>
+                    <Input {...register('company_name')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Anrede</Label>
+                    <Input {...register('salutation')} placeholder="Herr / Frau" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Vorname</Label>
+                    <Input {...register('first_name')} />
+                  </div>
+                  <div className="space-y-2 col-span-2">
+                    <Label>Nachname (Ansprechpartner)</Label>
+                    <Input {...register('last_name')} />
+                  </div>
+                  <div className="space-y-2 col-span-2">
                     <Label>Straße / Hausnummer</Label>
-                    <Input {...register('address_line1')} placeholder="Coventrystraße 32" />
+                    <Input {...register('address_line1')} />
                   </div>
                   <div className="space-y-2">
                     <Label>PLZ</Label>
-                    <Input {...register('postal_code')} placeholder="65934" />
+                    <Input {...register('postal_code')} />
                   </div>
                   <div className="space-y-2">
                     <Label>Ort</Label>
-                    <Input {...register('city')} placeholder="Frankfurt am Main" />
+                    <Input {...register('city')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>E-Mail</Label>
+                    <Input type="email" {...register('email')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Telefon</Label>
+                    <Input {...register('phone')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ust-IdNr.</Label>
+                    <Input {...register('vat_id')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>DATEV-Konto</Label>
+                    <Input {...register('datev_account_number')} />
+                  </div>
+                </div>
+              )}
+
+              {/* Person */}
+              {customerType === 'person' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Anrede</Label>
+                    <Input {...register('salutation')} placeholder="Herr / Frau" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Vorname *</Label>
+                    <Input {...register('first_name')} />
+                  </div>
+                  <div className="space-y-2 col-span-2">
+                    <Label>Nachname *</Label>
+                    <Input {...register('last_name')} />
+                  </div>
+                  <div className="space-y-2 col-span-2">
+                    <Label>Straße / Hausnummer</Label>
+                    <Input {...register('address_line1')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>PLZ</Label>
+                    <Input {...register('postal_code')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ort</Label>
+                    <Input {...register('city')} />
                   </div>
                   <div className="space-y-2">
                     <Label>E-Mail</Label>
@@ -452,135 +556,47 @@ export function CustomerListPage() {
                     <Input {...register('phone')} />
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Firma */}
-            {customerType === 'company' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2 col-span-2">
-                  <Label>Firmenname *</Label>
-                  <Input {...register('company_name')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Anrede</Label>
-                  <Input {...register('salutation')} placeholder="Herr / Frau" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Vorname</Label>
-                  <Input {...register('first_name')} />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Nachname (Ansprechpartner)</Label>
-                  <Input {...register('last_name')} />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Straße / Hausnummer</Label>
-                  <Input {...register('address_line1')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>PLZ</Label>
-                  <Input {...register('postal_code')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ort</Label>
-                  <Input {...register('city')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>E-Mail</Label>
-                  <Input type="email" {...register('email')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Telefon</Label>
-                  <Input {...register('phone')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ust-IdNr.</Label>
-                  <Input {...register('vat_id')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>DATEV-Konto</Label>
-                  <Input {...register('datev_account_number')} />
-                </div>
-              </div>
-            )}
-
-            {/* Person */}
-            {customerType === 'person' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Anrede</Label>
-                  <Input {...register('salutation')} placeholder="Herr / Frau" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Vorname *</Label>
-                  <Input {...register('first_name')} />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Nachname *</Label>
-                  <Input {...register('last_name')} />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Straße / Hausnummer</Label>
-                  <Input {...register('address_line1')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>PLZ</Label>
-                  <Input {...register('postal_code')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ort</Label>
-                  <Input {...register('city')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>E-Mail</Label>
-                  <Input type="email" {...register('email')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Telefon</Label>
-                  <Input {...register('phone')} />
-                </div>
-              </div>
-            )}
-
-            {/* Bankdaten (alle Typen) */}
-            <div className="border-t pt-4 space-y-3">
-              <p className="text-sm font-medium text-muted-foreground">Bankverbindung</p>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2 col-span-2">
-                  <Label>IBAN</Label>
-                  <Input {...register('iban')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>BIC</Label>
-                  <Input {...register('bic')} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Bank</Label>
-                  <Input {...register('bank_name')} />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Kontoinhaber</Label>
-                  <Input {...register('account_holder')} />
-                </div>
-              </div>
-            </div>
-
-            {/* Notizen + Kundennummer (beim Bearbeiten) */}
-            <div className="grid grid-cols-2 gap-4">
-              {editing && (
-                <div className="space-y-2">
-                  <Label>Kundennummer</Label>
-                  <Input {...register('customer_number')} readOnly className="bg-muted" />
-                </div>
               )}
-              <div className={`space-y-2 ${editing ? '' : 'col-span-2'}`}>
-                <Label>Notizen</Label>
-                <Input {...register('notes')} />
-              </div>
-            </div>
 
-            <DialogFooter>
+              {/* Bankdaten (alle Typen) */}
+              <div className="border-t pt-4 space-y-3">
+                <p className="text-sm font-medium text-muted-foreground">Bankverbindung</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2 col-span-2">
+                    <Label>IBAN</Label>
+                    <Input {...register('iban')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>BIC</Label>
+                    <Input {...register('bic')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Bank</Label>
+                    <Input {...register('bank_name')} />
+                  </div>
+                  <div className="space-y-2 col-span-2">
+                    <Label>Kontoinhaber</Label>
+                    <Input {...register('account_holder')} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Notizen + Kundennummer (beim Bearbeiten) */}
+              <div className="grid grid-cols-2 gap-4">
+                {editing && (
+                  <div className="space-y-2">
+                    <Label>Kundennummer</Label>
+                    <Input {...register('customer_number')} readOnly className="bg-muted" />
+                  </div>
+                )}
+                <div className={`space-y-2 ${editing ? '' : 'col-span-2'}`}>
+                  <Label>Notizen</Label>
+                  <Input {...register('notes')} />
+                </div>
+              </div>
+
+            </div>
+            <DialogFooter className="px-6 py-4 border-t shrink-0">
               <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>
                 Abbrechen
               </Button>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, Loader2, AlertTriangle, Search, X, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Loader2, AlertTriangle, Search, X, ChevronRight, Pencil } from 'lucide-react'
 import api from '@/lib/api'
 import type { Contract, ContractItem, Article } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -115,6 +115,15 @@ export function ContractDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [contractEditOpen, setContractEditOpen] = useState(false)
+  const [contractForm, setContractForm] = useState({
+    property_ref: '',
+    start_date: '',
+    end_date: '',
+    billing_day: '',
+    payment_terms_days: '',
+    notes: '',
+  })
   const [itemDialogOpen, setItemDialogOpen] = useState(false)
   const [articleDrawerOpen, setArticleDrawerOpen] = useState(false)
   const articleDrawerOpenRef = useRef(false)
@@ -129,12 +138,25 @@ export function ContractDetailPage() {
     sort_order: '0',
     valid_from: '',
     valid_until: '',
+    is_active: true,
   })
 
   const { data: contract, isLoading } = useQuery({
     queryKey: ['contract', id],
     queryFn: () => api.get<Contract>(`/contracts/${id}`).then((r) => r.data),
     enabled: !!id,
+  })
+
+  const updateContractMutation = useMutation({
+    mutationFn: (data: any) => api.put(`/contracts/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contract', id] })
+      setContractEditOpen(false)
+      toast({ title: 'Vertrag aktualisiert' })
+    },
+    onError: (err: any) => {
+      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+    },
   })
 
   const terminateMutation = useMutation({
@@ -177,8 +199,32 @@ export function ContractDetailPage() {
     },
   })
 
+  function openContractEdit() {
+    setContractForm({
+      property_ref: contract!.property_ref || '',
+      start_date: contract!.start_date || '',
+      end_date: contract!.end_date || '',
+      billing_day: String(contract!.billing_day),
+      payment_terms_days: String(contract!.payment_terms_days),
+      notes: contract!.notes || '',
+    })
+    setContractEditOpen(true)
+  }
+
+  function handleContractSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    updateContractMutation.mutate({
+      property_ref: contractForm.property_ref || null,
+      start_date: contractForm.start_date || null,
+      end_date: contractForm.end_date || null,
+      billing_day: parseInt(contractForm.billing_day) || 1,
+      payment_terms_days: parseInt(contractForm.payment_terms_days) || 14,
+      notes: contractForm.notes || null,
+    })
+  }
+
   function resetItemForm() {
-    setItemForm({ quantity: '1', override_price: '', override_vat_rate: '', description_override: '', billing_period: 'monthly', sort_order: '0', valid_from: '', valid_until: '' })
+    setItemForm({ quantity: '1', override_price: '', override_vat_rate: '', description_override: '', billing_period: 'monthly', sort_order: '0', valid_from: '', valid_until: '', is_active: true })
     setSelectedArticle(null)
   }
 
@@ -210,6 +256,7 @@ export function ContractDetailPage() {
       sort_order: String(item.sort_order),
       valid_from: item.valid_from || '',
       valid_until: item.valid_until || '',
+      is_active: item.is_active,
     })
     setItemDialogOpen(true)
   }
@@ -226,17 +273,18 @@ export function ContractDetailPage() {
 
   function handleItemSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const norm = (v: string) => v.replace(',', '.')
     const data = {
       article_id: selectedArticle?.id || (editingItem?.article_id) || undefined,
-      quantity: parseFloat(itemForm.quantity),
-      override_price: itemForm.override_price ? parseFloat(itemForm.override_price) : null,
-      override_vat_rate: itemForm.override_vat_rate ? parseFloat(itemForm.override_vat_rate) : null,
+      quantity: parseFloat(norm(itemForm.quantity)),
+      override_price: itemForm.override_price ? parseFloat(norm(itemForm.override_price)) : null,
+      override_vat_rate: itemForm.override_vat_rate ? parseFloat(norm(itemForm.override_vat_rate)) : null,
       description_override: itemForm.description_override || null,
       billing_period: itemForm.billing_period,
       sort_order: parseInt(itemForm.sort_order),
       valid_from: itemForm.valid_from || null,
       valid_until: itemForm.valid_until || null,
-      is_active: true,
+      is_active: itemForm.is_active,
     }
     if (editingItem) {
       updateItemMutation.mutate({ itemId: editingItem.id, data })
@@ -261,6 +309,9 @@ export function ContractDetailPage() {
         <Badge variant={contract.status === 'active' ? 'default' : 'destructive'} className="ml-auto">
           {CONTRACT_STATUS_LABELS[contract.status]}
         </Badge>
+        <Button variant="outline" size="sm" onClick={openContractEdit}>
+          <Pencil className="h-4 w-4 mr-2" /> Bearbeiten
+        </Button>
         {contract.status === 'active' && (
           <Button variant="outline" size="sm" className="text-destructive border-destructive"
             onClick={() => { if (confirm('Vertrag wirklich kündigen?')) terminateMutation.mutate() }}>
@@ -339,7 +390,7 @@ export function ContractDetailPage() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditItem(item)}>
-                        <Plus className="h-3 w-3 rotate-45" />
+                        <Pencil className="h-3 w-3" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8"
                         onClick={() => { if (confirm('Position löschen?')) deleteItemMutation.mutate(item.id) }}>
@@ -353,6 +404,50 @@ export function ContractDetailPage() {
           </Table>
         </div>
       </div>
+
+      {/* Contract Edit Dialog */}
+      <Dialog open={contractEditOpen} onOpenChange={setContractEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Vertrag bearbeiten</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleContractSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Objektreferenz</Label>
+              <Input value={contractForm.property_ref} onChange={(e) => setContractForm(p => ({ ...p, property_ref: e.target.value }))} placeholder="z.B. Musterstraße 1, App. 2" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Startdatum</Label>
+                <Input type="date" value={contractForm.start_date} onChange={(e) => setContractForm(p => ({ ...p, start_date: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Enddatum</Label>
+                <Input type="date" value={contractForm.end_date} onChange={(e) => setContractForm(p => ({ ...p, end_date: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Abrechnungstag (1–28)</Label>
+                <Input type="number" min="1" max="28" className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value={contractForm.billing_day} onChange={(e) => setContractForm(p => ({ ...p, billing_day: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Zahlungsziel (Tage)</Label>
+                <Input type="number" min="0" className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value={contractForm.payment_terms_days} onChange={(e) => setContractForm(p => ({ ...p, payment_terms_days: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Notizen</Label>
+              <Input value={contractForm.notes} onChange={(e) => setContractForm(p => ({ ...p, notes: e.target.value }))} placeholder="Optional" />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setContractEditOpen(false)}>Abbrechen</Button>
+              <Button type="submit" disabled={updateContractMutation.isPending}>
+                {updateContractMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Speichern
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Item Dialog */}
       <Dialog open={itemDialogOpen} onOpenChange={(open) => { setItemDialogOpen(open); if (!open) resetItemForm() }} modal={!articleDrawerOpen}>
@@ -407,15 +502,15 @@ export function ContractDetailPage() {
               </div>
               <div className="space-y-2">
                 <Label>Menge</Label>
-                <Input type="number" step="0.001" className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value={itemForm.quantity} onChange={(e) => setItemForm(p => ({ ...p, quantity: e.target.value }))} />
+                <Input inputMode="decimal" value={itemForm.quantity} onChange={(e) => setItemForm(p => ({ ...p, quantity: e.target.value }))} />
               </div>
               <div className="space-y-2">
                 <Label>Preis Override (netto)</Label>
-                <Input type="number" step="0.0001" className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value={itemForm.override_price} onChange={(e) => setItemForm(p => ({ ...p, override_price: e.target.value }))} placeholder="Leer = Artikelpreis" />
+                <Input inputMode="decimal" value={itemForm.override_price} onChange={(e) => setItemForm(p => ({ ...p, override_price: e.target.value }))} placeholder="Leer = Artikelpreis" />
               </div>
               <div className="space-y-2">
                 <Label>MwSt. Override (%)</Label>
-                <Input type="number" step="0.01" className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" value={itemForm.override_vat_rate} onChange={(e) => setItemForm(p => ({ ...p, override_vat_rate: e.target.value }))} placeholder="Leer = Artikel-MwSt." />
+                <Input inputMode="decimal" value={itemForm.override_vat_rate} onChange={(e) => setItemForm(p => ({ ...p, override_vat_rate: e.target.value }))} placeholder="Leer = Artikel-MwSt." />
               </div>
               <div className="space-y-2">
                 <Label>Reihenfolge</Label>
@@ -428,6 +523,17 @@ export function ContractDetailPage() {
               <div className="space-y-2">
                 <Label>Gültig bis</Label>
                 <Input type="date" value={itemForm.valid_until} onChange={(e) => setItemForm(p => ({ ...p, valid_until: e.target.value }))} />
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label>Status</Label>
+                <div className="flex gap-2">
+                  {([true, false] as const).map((v) => (
+                    <label key={String(v)} className={`flex-1 flex items-center justify-center gap-2 border rounded-lg px-3 py-2 cursor-pointer text-sm font-medium transition-colors ${itemForm.is_active === v ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'}`}>
+                      <input type="radio" className="hidden" checked={itemForm.is_active === v} onChange={() => setItemForm(p => ({ ...p, is_active: v }))} />
+                      {v ? 'Aktiv' : 'Inaktiv'}
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
 

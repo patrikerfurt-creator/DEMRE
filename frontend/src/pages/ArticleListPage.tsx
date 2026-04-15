@@ -15,13 +15,16 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from '@/hooks/use-toast'
 import { formatCurrency } from '@/lib/utils'
 
+function normalizeDecimal(v: string) { return v.replace(',', '.') }
+function isValidNumber(v: string) { return v.trim() !== '' && !isNaN(parseFloat(normalizeDecimal(v))) }
+
 const schema = z.object({
   article_number: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
   unit: z.string().optional(),
-  unit_price: z.string().min(1),
-  vat_rate: z.string().default('19.00'),
+  unit_price: z.string().min(1).refine(isValidNumber, { message: 'Ungültige Zahl' }),
+  vat_rate: z.string().min(1).refine(isValidNumber, { message: 'Ungültige Zahl' }).default('19.00'),
   category: z.string().optional(),
   is_active: z.boolean().default(true),
 })
@@ -50,11 +53,19 @@ export function ArticleListPage() {
     resolver: zodResolver(schema),
   })
 
+  function formatApiError(err: any): string {
+    const detail = err?.response?.data?.detail
+    if (!detail) return err?.message || 'Unbekannter Fehler'
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) return detail.map((e: any) => e.msg || JSON.stringify(e)).join(' | ')
+    return JSON.stringify(detail)
+  }
+
   const createMutation = useMutation({
     mutationFn: (data: FormData) => api.post('/articles', {
       ...data,
-      unit_price: parseFloat(data.unit_price),
-      vat_rate: parseFloat(data.vat_rate),
+      unit_price: parseFloat(normalizeDecimal(data.unit_price)),
+      vat_rate: parseFloat(normalizeDecimal(data.vat_rate)),
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] })
@@ -62,7 +73,7 @@ export function ArticleListPage() {
       toast({ title: 'Artikel erstellt' })
     },
     onError: (err: any) => {
-      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+      toast({ title: 'Fehler beim Speichern', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -70,13 +81,16 @@ export function ArticleListPage() {
     mutationFn: ({ id, data }: { id: string; data: FormData }) =>
       api.put(`/articles/${id}`, {
         ...data,
-        unit_price: parseFloat(data.unit_price),
-        vat_rate: parseFloat(data.vat_rate),
+        unit_price: parseFloat(normalizeDecimal(data.unit_price)),
+        vat_rate: parseFloat(normalizeDecimal(data.vat_rate)),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] })
       setDialogOpen(false)
       toast({ title: 'Artikel aktualisiert' })
+    },
+    onError: (err: any) => {
+      toast({ title: 'Fehler beim Speichern', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -256,42 +270,57 @@ export function ArticleListPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex flex-col max-h-[90vh] p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <DialogTitle>{editing ? 'Artikel bearbeiten' : 'Neuer Artikel'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Artikelnummer *</Label>
-                <Input {...register('article_number')} />
+          <form
+            onSubmit={handleSubmit(onSubmit, (errs) => {
+              const fields = Object.keys(errs).map((k) => ({
+                article_number: 'Artikelnummer',
+                name: 'Bezeichnung',
+                unit_price: 'Einzelpreis',
+              } as Record<string, string>)[k] ?? k).join(', ')
+              toast({ title: 'Pflichtfelder fehlen', description: fields, variant: 'destructive' })
+            })}
+            className="flex flex-col flex-1 min-h-0"
+          >
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Artikelnummer *</Label>
+                  <Input {...register('article_number')} className={errors.article_number ? 'border-destructive' : ''} />
+                  {errors.article_number && <p className="text-xs text-destructive">Pflichtfeld</p>}
+                </div>
+                <div className="space-y-1">
+                  <Label>Bezeichnung *</Label>
+                  <Input {...register('name')} className={errors.name ? 'border-destructive' : ''} />
+                  {errors.name && <p className="text-xs text-destructive">Pflichtfeld</p>}
+                </div>
+                <div className="space-y-1">
+                  <Label>Einzelpreis netto *</Label>
+                  <Input inputMode="decimal" placeholder="z.B. 19.90" className={errors.unit_price ? 'border-destructive' : ''} {...register('unit_price')} />
+                  {errors.unit_price && <p className="text-xs text-destructive">{errors.unit_price.message || 'Pflichtfeld'}</p>}
+                </div>
+                <div className="space-y-1">
+                  <Label>MwSt.-Satz (%)</Label>
+                  <Input inputMode="decimal" placeholder="19.00" {...register('vat_rate')} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Einheit</Label>
+                  <Input {...register('unit')} placeholder="Stk., m², Monat..." />
+                </div>
+                <div className="space-y-1">
+                  <Label>Kategorie</Label>
+                  <Input {...register('category')} />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Bezeichnung *</Label>
-                <Input {...register('name')} />
-              </div>
-              <div className="space-y-2">
-                <Label>Einzelpreis netto *</Label>
-                <Input type="number" step="0.0001" {...register('unit_price')} />
-              </div>
-              <div className="space-y-2">
-                <Label>MwSt.-Satz (%)</Label>
-                <Input type="number" step="0.01" {...register('vat_rate')} />
-              </div>
-              <div className="space-y-2">
-                <Label>Einheit</Label>
-                <Input {...register('unit')} placeholder="Stk., m², Monat..." />
-              </div>
-              <div className="space-y-2">
-                <Label>Kategorie</Label>
-                <Input {...register('category')} />
+              <div className="space-y-1">
+                <Label>Beschreibung</Label>
+                <Input {...register('description')} />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Beschreibung</Label>
-              <Input {...register('description')} />
-            </div>
-            <DialogFooter>
+            <DialogFooter className="px-6 py-4 border-t shrink-0">
               <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>Abbrechen</Button>
               <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
                 {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
