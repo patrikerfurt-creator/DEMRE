@@ -24,8 +24,6 @@ const schema = z.object({
   company_iban: z.string().optional(),
   company_bic: z.string().optional(),
   company_bank_name: z.string().optional(),
-  invoice_number_prefix: z.string().min(1),
-  invoice_number_year_reset: z.boolean(),
 })
 type FormData = z.infer<typeof schema>
 
@@ -37,7 +35,7 @@ export function SettingsPage() {
     queryFn: () => api.get<CompanySettings>('/settings').then((r) => r.data),
   })
 
-  const { register, handleSubmit, reset, watch, setValue, formState: { isDirty } } = useForm<FormData>({
+  const { register, handleSubmit, reset, formState: { isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema),
     values: settings ? {
       company_name: settings.company_name,
@@ -52,8 +50,6 @@ export function SettingsPage() {
       company_iban: settings.company_iban || '',
       company_bic: settings.company_bic || '',
       company_bank_name: settings.company_bank_name || '',
-      invoice_number_prefix: settings.invoice_number_prefix,
-      invoice_number_year_reset: settings.invoice_number_year_reset,
     } : undefined,
   })
 
@@ -155,22 +151,13 @@ export function SettingsPage() {
           <CardHeader>
             <CardTitle>Rechnungsnummern</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Präfix</Label>
-                <Input {...register('invoice_number_prefix')} placeholder="RE" />
-                <p className="text-xs text-muted-foreground">Format: {watch('invoice_number_prefix') || 'RE'}-2024-000001</p>
-              </div>
-              <div className="flex items-center gap-3 pt-6">
-                <input
-                  type="checkbox"
-                  id="year-reset"
-                  {...register('invoice_number_year_reset')}
-                />
-                <Label htmlFor="year-reset">Nummerierung jährlich zurücksetzen</Label>
-              </div>
-            </div>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Format: <span className="font-mono font-medium text-slate-700">JJJJ-NNNN</span>
+              &nbsp;— z.&nbsp;B. <span className="font-mono font-medium text-slate-700">2026-0311</span>,{' '}
+              <span className="font-mono font-medium text-slate-700">2027-0001</span>.
+              Die Nummerierung setzt sich jährlich zurück.
+            </p>
           </CardContent>
         </Card>
 

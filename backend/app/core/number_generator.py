@@ -47,21 +47,15 @@ async def generate_customer_number(db: AsyncSession) -> str:
 async def generate_invoice_number(db: AsyncSession) -> str:
     """
     Generate a gapless invoice number using a PostgreSQL sequence.
-    Format: RE-YYYY-NNNNNN
+    Format: YYYY-NNNN (z. B. 2026-0311).
+    Resets every year. 2026 starts at 311 to continue existing numbering.
     """
     year = date.today().year
+    start = 311 if year == 2026 else 1
+    seq_name = f"invoice_num_{year}"
 
-    if settings.invoice_number_year_reset:
-        # Use a per-year sequence
-        seq_name = f"invoice_number_seq_{year}"
-        # Try to create the sequence if it doesn't exist
-        await db.execute(
-            text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name} START 1")
-        )
-        result = await db.execute(text(f"SELECT nextval('{seq_name}')"))
-    else:
-        result = await db.execute(text("SELECT nextval('invoice_number_seq')"))
-
-    seq_val = result.scalar()
-    prefix = settings.invoice_number_prefix
-    return f"{prefix}-{year}-{seq_val:06d}"
+    await db.execute(
+        text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name} START {start}")
+    )
+    result = await db.execute(text(f"SELECT nextval('{seq_name}')"))
+    return f"{year}-{result.scalar():04d}"
