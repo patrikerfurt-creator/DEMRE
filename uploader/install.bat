@@ -13,7 +13,7 @@ echo ============================================
 echo.
 
 :: Abhaengigkeiten installieren
-echo [1/3] Installiere Python-Pakete ...
+echo [1/4] Installiere Python-Pakete ...
 pip install -r "%~dp0requirements.txt"
 if %errorlevel% neq 0 (
     echo FEHLER beim Installieren der Pakete.
@@ -24,19 +24,29 @@ if %errorlevel% neq 0 (
 :: config.json anlegen falls nicht vorhanden
 if not exist "%~dp0config.json" (
     echo.
-    echo [2/3] config.json nicht gefunden – Vorlage wird geoeffnet ...
+    echo [2/4] config.json nicht gefunden – Vorlage wird geoeffnet ...
     copy "%~dp0config.json.example" "%~dp0config.json"
     notepad "%~dp0config.json"
     echo Bitte config.json speichern und dann eine beliebige Taste druecken ...
     pause >nul
 ) else (
-    echo [2/3] config.json bereits vorhanden – wird verwendet.
+    echo [2/4] config.json bereits vorhanden – wird verwendet.
 )
 
-:: Dienst installieren und starten
+:: Windows-Benutzerkonto abfragen
+:: Der Dienst muss unter einem echten Benutzerkonto laufen,
+:: damit er auf Netzwerkordner (\\server\freigabe) zugreifen kann.
 echo.
-echo [3/3] Installiere und starte Windows-Dienst ...
-python "%~dp0demre_uploader_service.py" --startup auto install
+echo [3/4] Windows-Benutzerkonto fuer den Dienst
+echo     (Der Dienst benoetigt ein Benutzerkonto mit Zugriff auf die Netzwerkordner)
+echo.
+set /p WIN_USER="Windows-Benutzername (z.B. maurer oder DOMAIN\maurer): "
+set /p WIN_PASS="Windows-Passwort: "
+echo.
+
+:: Dienst installieren
+echo [4/4] Installiere und starte Windows-Dienst ...
+python "%~dp0demre_uploader_service.py" --startup auto --username "%WIN_USER%" --password "%WIN_PASS%" install
 if %errorlevel% neq 0 (
     echo FEHLER beim Installieren des Dienstes.
     pause
@@ -45,6 +55,7 @@ if %errorlevel% neq 0 (
 python "%~dp0demre_uploader_service.py" start
 if %errorlevel% neq 0 (
     echo FEHLER beim Starten des Dienstes.
+    echo Bitte uploader.log pruefen: %~dp0uploader.log
     pause
     exit /b 1
 )
