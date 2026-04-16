@@ -139,6 +139,7 @@ async def _process_file(filepath: str, original_name: str, storage_path: str):
             total_gross=_to_decimal(extracted.get("total_gross")),
             currency=extracted.get("currency") or "EUR",
             description=extracted.get("description"),
+            is_direct_debit=bool(extracted.get("is_direct_debit", False)),
             status=IncomingInvoiceStatus.open,
             document_path=dest_path,
         )

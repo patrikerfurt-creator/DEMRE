@@ -22,7 +22,8 @@ class ExpenseReceiptBase(BaseModel):
 
 
 class ExpenseReceiptCreate(ExpenseReceiptBase):
-    pass
+    source_pending_file: Optional[str] = None  # Dateiname aus dem Staging-Ordner
+    submitted_by_id: Optional[UUID] = None      # Falls abweichend vom eingeloggten Nutzer
 
 
 class ExpenseReceiptUpdate(BaseModel):

@@ -104,4 +104,14 @@ api.interceptors.response.use(
   }
 )
 
+/** Dokument mit Auth-Header laden und in neuem Tab öffnen */
+export async function openDocument(url: string): Promise<void> {
+  const response = await api.get(url, { responseType: 'blob' })
+  const contentType = response.headers['content-type'] || 'application/octet-stream'
+  const blob = new Blob([response.data], { type: contentType })
+  const objectUrl = URL.createObjectURL(blob)
+  window.open(objectUrl, '_blank')
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 15000)
+}
+
 export default api

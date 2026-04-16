@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Search, Upload, Pencil, CheckCircle, XCircle, Loader2, Download } from 'lucide-react'
-import api from '@/lib/api'
+import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, Banknote } from 'lucide-react'
+import api, { openDocument } from '@/lib/api'
 import type { IncomingInvoice, IncomingInvoiceListResponse, Creditor, CreditorListResponse, IncomingInvoiceStatus } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,8 +46,19 @@ const schema = z.object({
   description: z.string().optional(),
   cost_account: z.string().optional(),
   notes: z.string().optional(),
+  is_direct_debit: z.boolean().default(false),
 })
 type FormData = z.infer<typeof schema>
+
+interface PendingFile {
+  filename: string
+  size: number
+  created_at: string
+  extracted?: Record<string, any>
+  extraction_error?: string
+  matched_creditor?: { id: string; creditor_number: string; company_name: string } | null
+  is_direct_debit?: boolean
+}
 
 export function IncomingInvoiceListPage() {
   const queryClient = useQueryClient()
@@ -56,6 +67,7 @@ export function IncomingInvoiceListPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<IncomingInvoice | null>(null)
   const [uploadInvoice, setUploadInvoice] = useState<IncomingInvoice | null>(null)
+  const [pendingSourceFile, setPendingSourceFile] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading } = useQuery({
@@ -73,9 +85,16 @@ export function IncomingInvoiceListPage() {
   })
   const creditors = creditorsData?.items ?? []
 
-  const { register, handleSubmit, reset } = useForm<FormData>({
+  const { data: pendingData, refetch: refetchPending } = useQuery({
+    queryKey: ['incoming-invoices-pending'],
+    queryFn: () => api.get<{ files: PendingFile[] }>('/incoming-invoices/pending').then((r) => r.data),
+  })
+  const pendingFiles = pendingData?.files ?? []
+
+  const { register, handleSubmit, reset, setValue, watch } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
+  const isDirectDebit = watch('is_direct_debit', false)
 
   const createMutation = useMutation({
     mutationFn: (data: FormData) => api.post('/incoming-invoices', data),
@@ -123,29 +142,35 @@ export function IncomingInvoiceListPage() {
     onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
   })
 
-  const sepaExportMutation = useMutation({
-    mutationFn: () => api.post('/incoming-invoices/sepa-export', null, { responseType: 'blob' }),
-    onSuccess: (res) => {
-      const url = URL.createObjectURL(res.data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `sepa_eingangsrechnungen_${new Date().toISOString().slice(0, 10)}.xml`
-      a.click()
-      URL.revokeObjectURL(url)
-      queryClient.invalidateQueries({ queryKey: ['incoming-invoices'] })
-      toast({ title: 'SEPA-Export erstellt' })
+  const deletePendingMutation = useMutation({
+    mutationFn: (filename: string) => api.delete(`/incoming-invoices/pending/${encodeURIComponent(filename)}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incoming-invoices-pending'] })
+      toast({ title: 'Datei gelöscht' })
     },
-    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+    onError: () => toast({ title: 'Fehler beim Löschen', variant: 'destructive' }),
+  })
+
+  const extractPendingMutation = useMutation({
+    mutationFn: (filename: string) =>
+      api.post(`/incoming-invoices/pending/${encodeURIComponent(filename)}/extract`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incoming-invoices-pending'] })
+      toast({ title: 'Extraktion gestartet' })
+    },
+    onError: () => toast({ title: 'Fehler bei der Extraktion', variant: 'destructive' }),
   })
 
   function openCreate() {
     setEditing(null)
-    reset({ currency: 'EUR', invoice_date: new Date().toISOString().slice(0, 10) })
+    setPendingSourceFile(null)
+    reset({ currency: 'EUR', invoice_date: new Date().toISOString().slice(0, 10), is_direct_debit: false })
     setDialogOpen(true)
   }
 
   function openEdit(inv: IncomingInvoice) {
     setEditing(inv)
+    setPendingSourceFile(null)
     reset({
       creditor_id: inv.creditor_id,
       external_invoice_number: inv.external_invoice_number || '',
@@ -159,6 +184,29 @@ export function IncomingInvoiceListPage() {
       description: inv.description || '',
       cost_account: inv.cost_account || '',
       notes: inv.notes || '',
+      is_direct_debit: inv.is_direct_debit,
+    })
+    setDialogOpen(true)
+  }
+
+  function openFromPending(pf: PendingFile) {
+    setEditing(null)
+    setPendingSourceFile(pf.filename)
+    const d = pf.extracted ?? {}
+    reset({
+      creditor_id: pf.matched_creditor?.id ?? '',
+      external_invoice_number: d.external_invoice_number ?? '',
+      invoice_date: d.invoice_date ?? new Date().toISOString().slice(0, 10),
+      receipt_date: new Date().toISOString().slice(0, 10),
+      due_date: d.due_date ?? '',
+      total_net: parseFloat(d.total_net) || 0,
+      total_vat: parseFloat(d.total_vat) || 0,
+      total_gross: parseFloat(d.total_gross) || 0,
+      currency: d.currency ?? 'EUR',
+      description: d.description ?? '',
+      cost_account: '',
+      notes: '',
+      is_direct_debit: pf.is_direct_debit ?? false,
     })
     setDialogOpen(true)
   }
@@ -167,7 +215,9 @@ export function IncomingInvoiceListPage() {
     if (editing) {
       updateMutation.mutate({ id: editing.id, data })
     } else {
-      createMutation.mutate(data)
+      const payload: any = { ...data }
+      if (pendingSourceFile) payload.source_pending_file = pendingSourceFile
+      createMutation.mutate(payload)
     }
   }
 
@@ -179,8 +229,6 @@ export function IncomingInvoiceListPage() {
   const items = data?.items ?? []
   const total = data?.total ?? 0
   const totalPages = Math.ceil(total / 25)
-  const approvedCount = items.filter(i => i.status === 'approved').length
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -188,20 +236,90 @@ export function IncomingInvoiceListPage() {
           <h1 className="text-2xl font-bold text-slate-900">Eingangsrechnungen</h1>
           <p className="text-sm text-slate-500 mt-1">{total} Einträge</p>
         </div>
-        <div className="flex gap-2">
-          {approvedCount > 0 && (
-            <Button variant="outline" onClick={() => sepaExportMutation.mutate()}>
-              {sepaExportMutation.isPending
-                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                : <Download className="h-4 w-4 mr-2" />}
-              SEPA Export ({approvedCount})
-            </Button>
-          )}
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-2" /> Neue Eingangsrechnung
-          </Button>
-        </div>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-2" /> Neue Eingangsrechnung
+        </Button>
       </div>
+
+      {/* Pending-Panel: Dateien aus dem Eingangsordner */}
+      {pendingFiles.length > 0 && (
+        <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold text-amber-900 text-sm">
+              Eingang Ordner – {pendingFiles.length} Datei(en) warten auf Übernahme
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => refetchPending()}>
+              <RefreshCw className="h-3 w-3 mr-1" /> Aktualisieren
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {pendingFiles.map((pf) => (
+              <div key={pf.filename} className="flex items-center gap-3 bg-white rounded border px-3 py-2 text-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{pf.filename}</div>
+                  {pf.extraction_error ? (
+                    <div className="text-xs text-red-600">Fehler: {pf.extraction_error}</div>
+                  ) : pf.extracted ? (
+                    <div className="text-xs text-slate-500 flex gap-3 flex-wrap">
+                      {pf.extracted.creditor_name && <span>Kreditor: <strong>{pf.extracted.creditor_name}</strong></span>}
+                      {pf.extracted.total_gross && <span>Betrag: <strong>{formatCurrency(pf.extracted.total_gross)}</strong></span>}
+                      {pf.extracted.invoice_date && <span>Datum: {pf.extracted.invoice_date}</span>}
+                      {pf.is_direct_debit && (
+                        <span className="inline-flex items-center gap-1 text-blue-700">
+                          <CreditCard className="h-3 w-3" /> Lastschrift erkannt
+                        </span>
+                      )}
+                      {pf.matched_creditor && (
+                        <span className="text-green-700">Kreditor gefunden: {pf.matched_creditor.company_name}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400">Extraktion ausstehend…</div>
+                  )}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Vorschau"
+                    onClick={() => openDocument(`/incoming-invoices/pending/${encodeURIComponent(pf.filename)}/download`)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  {pf.extraction_error && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Erneut extrahieren"
+                      onClick={() => extractPendingMutation.mutate(pf.filename)}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Als Eingangsrechnung übernehmen"
+                    onClick={() => openFromPending(pf)}
+                    className="text-green-700"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Löschen"
+                    onClick={() => deletePendingMutation.mutate(pf.filename)}
+                    className="text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2 items-center">
         <select
@@ -221,11 +339,11 @@ export function IncomingInvoiceListPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Belegnr.</TableHead>
-              <TableHead>Ext. Rechnungsnr.</TableHead>
               <TableHead>Kreditor</TableHead>
               <TableHead>Rechnungsdatum</TableHead>
               <TableHead>Fälligkeit</TableHead>
               <TableHead className="text-right">Brutto</TableHead>
+              <TableHead>Zahlung</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Dokument</TableHead>
               <TableHead className="w-32">Aktionen</TableHead>
@@ -247,8 +365,12 @@ export function IncomingInvoiceListPage() {
             ) : (
               items.map((inv) => (
                 <TableRow key={inv.id}>
-                  <TableCell className="font-mono text-sm">{inv.document_number}</TableCell>
-                  <TableCell className="text-sm">{inv.external_invoice_number || '–'}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    <div>{inv.document_number}</div>
+                    {inv.external_invoice_number && (
+                      <div className="text-xs text-muted-foreground">{inv.external_invoice_number}</div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <div className="text-sm font-medium">{creditorName(inv.creditor)}</div>
                     {inv.creditor && <div className="text-xs text-muted-foreground">{inv.creditor.creditor_number}</div>}
@@ -257,20 +379,29 @@ export function IncomingInvoiceListPage() {
                   <TableCell className="text-sm">{inv.due_date || '–'}</TableCell>
                   <TableCell className="text-right font-medium">{formatCurrency(inv.total_gross)}</TableCell>
                   <TableCell>
+                    {inv.is_direct_debit ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-blue-700 font-medium">
+                        <CreditCard className="h-3 w-3" /> Lastschrift
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <Banknote className="h-3 w-3" /> Überweisung
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <Badge variant={STATUS_VARIANTS[inv.status]}>
                       {STATUS_LABELS[inv.status]}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     {inv.document_path ? (
-                      <a
-                        href={`/api/v1/incoming-invoices/${inv.id}/document`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => openDocument(`/incoming-invoices/${inv.id}/document`)}
                         className="text-blue-600 hover:underline text-xs"
                       >
                         Anzeigen
-                      </a>
+                      </button>
                     ) : (
                       <Button
                         variant="ghost"
@@ -344,11 +475,17 @@ export function IncomingInvoiceListPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Eingangsrechnung bearbeiten' : 'Neue Eingangsrechnung'}</DialogTitle>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>
+              {editing ? 'Eingangsrechnung bearbeiten' : pendingSourceFile ? 'Rechnung aus Eingangsordner übernehmen' : 'Neue Eingangsrechnung'}
+            </DialogTitle>
+            {pendingSourceFile && (
+              <p className="text-xs text-muted-foreground mt-1">Datei: {pendingSourceFile}</p>
+            )}
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto pr-1">
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2 space-y-2">
                 <Label>Kreditor *</Label>
@@ -404,16 +541,32 @@ export function IncomingInvoiceListPage() {
                 <Label>Beschreibung / Verwendungszweck</Label>
                 <Input {...register('description')} />
               </div>
+              <div className="col-span-2 flex items-start gap-3 rounded-md border px-3 py-2 bg-slate-50">
+                <input
+                  id="is_direct_debit"
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 cursor-pointer"
+                  checked={isDirectDebit}
+                  onChange={(e) => setValue('is_direct_debit', e.target.checked)}
+                />
+                <div>
+                  <label htmlFor="is_direct_debit" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-blue-600" /> SEPA-Lastschrift (wird abgebucht)
+                  </label>
+                  <p className="text-xs text-muted-foreground">Aktivieren wenn der Betrag per Lastschrift eingezogen wird — nicht in SEPA-Überweisung aufnehmen</p>
+                </div>
+              </div>
               <div className="col-span-2 space-y-2">
                 <Label>Notizen</Label>
                 <Input {...register('notes')} />
               </div>
             </div>
-            <DialogFooter>
+            </div>
+            <DialogFooter className="shrink-0 pt-4">
               <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>Abbrechen</Button>
               <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
                 {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editing ? 'Speichern' : 'Anlegen'}
+                {editing ? 'Speichern' : pendingSourceFile ? 'Übernehmen' : 'Anlegen'}
               </Button>
             </DialogFooter>
           </form>

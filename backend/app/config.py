@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Storage
     storage_path: str = "/app/storage"
     incoming_invoices_watch_dir: str = "/app/incoming_invoices"
+    expense_receipts_watch_dir: str = "/app/expense_receipts"
 
     # KI-Rechnungsextraktion
     anthropic_api_key: Optional[str] = None

@@ -1,11 +1,11 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Download } from 'lucide-react'
-import api from '@/lib/api'
-import type { ExpenseReceipt, ExpenseReceiptListResponse, ExpenseReceiptStatus } from '@/types'
+import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, RotateCcw } from 'lucide-react'
+import api, { openDocument } from '@/lib/api'
+import type { ExpenseReceipt, ExpenseReceiptListResponse, ExpenseReceiptStatus, User } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +16,25 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from '@/hooks/use-toast'
 import { formatCurrency } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
+
+interface PendingReceipt {
+  filename: string
+  size: number
+  created_at: string
+  extracted?: {
+    merchant?: string
+    receipt_date?: string
+    amount_gross?: string | number
+    vat_amount?: string | number
+    amount_net?: string | number
+    vat_rate?: string | number
+    currency?: string
+    category?: string
+    description?: string
+    payment_method?: string
+  }
+  extraction_error?: string
+}
 
 const STATUS_LABELS: Record<ExpenseReceiptStatus, string> = {
   submitted: 'Eingereicht',
@@ -46,6 +65,7 @@ const schema = z.object({
   reimbursement_iban: z.string().optional(),
   reimbursement_account_holder: z.string().optional(),
   notes: z.string().optional(),
+  submitted_by_id: z.string().optional(),
 })
 type FormData = z.infer<typeof schema>
 
@@ -57,6 +77,7 @@ function ReceiptTable({
   onApprove,
   onReject,
   onUpload,
+  onReset,
 }: {
   items: ExpenseReceipt[]
   isLoading: boolean
@@ -65,6 +86,7 @@ function ReceiptTable({
   onApprove: (r: ExpenseReceipt) => void
   onReject: (r: ExpenseReceipt) => void
   onUpload: (r: ExpenseReceipt) => void
+  onReset: (r: ExpenseReceipt) => void
 }) {
   return (
     <div className="border rounded-lg">
@@ -107,7 +129,16 @@ function ReceiptTable({
                 <TableCell className="text-sm">{r.receipt_date}</TableCell>
                 <TableCell className="text-sm">{r.merchant || '–'}</TableCell>
                 <TableCell className="text-sm">{r.category || '–'}</TableCell>
-                <TableCell className="text-right font-medium">{formatCurrency(r.amount_gross)}</TableCell>
+                <TableCell className="text-right font-medium">
+                  <div className="flex items-center justify-end gap-1.5">
+                    {formatCurrency(r.amount_gross)}
+                    {r.payment_method === 'Kreditkarte' && (
+                      <span title="Kreditkarte – keine Überweisung">
+                        <CreditCard className="h-3.5 w-3.5 text-amber-500" />
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   <Badge variant={STATUS_VARIANTS[r.status]}>
                     {STATUS_LABELS[r.status]}
@@ -115,14 +146,12 @@ function ReceiptTable({
                 </TableCell>
                 <TableCell>
                   {r.document_path ? (
-                    <a
-                      href={`/api/v1/expense-receipts/${r.id}/document`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => openDocument(`/expense-receipts/${r.id}/document`)}
                       className="text-blue-600 hover:underline text-xs"
                     >
                       Anzeigen
-                    </a>
+                    </button>
                   ) : (
                     <Button
                       variant="ghost"
@@ -151,6 +180,17 @@ function ReceiptTable({
                         </Button>
                       </>
                     )}
+                    {isAdmin && r.status === 'paid' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Zurück zu Genehmigt"
+                        onClick={() => onReset(r)}
+                        className="text-amber-600 hover:text-amber-800"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -171,6 +211,7 @@ export function ExpenseReceiptListPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ExpenseReceipt | null>(null)
   const [uploadReceipt, setUploadReceipt] = useState<ExpenseReceipt | null>(null)
+  const [pendingSourceFile, setPendingSourceFile] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const { data: ownData, isLoading: ownLoading } = useQuery({
@@ -190,18 +231,78 @@ export function ExpenseReceiptListPage() {
     enabled: isAdmin,
   })
 
-  const { register, handleSubmit, reset } = useForm<FormData>({
+  const { data: pendingData, refetch: refetchPending } = useQuery({
+    queryKey: ['expense-receipts-pending'],
+    queryFn: () => api.get<{ files: PendingReceipt[] }>('/expense-receipts/pending').then((r) => r.data),
+    enabled: isAdmin,
+  })
+  const pendingFiles = pendingData?.files ?? []
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users-all'],
+    queryFn: () => api.get<User[]>('/users').then((r) => r.data),
+    enabled: isAdmin,
+  })
+  const users = usersData ?? []
+
+  const { register, handleSubmit, reset, watch, setValue } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
 
+  const watchedPaymentMethod = watch('payment_method')
+  const isKreditkarte = watchedPaymentMethod === 'Kreditkarte'
+  const watchedSubmittedById = watch('submitted_by_id')
+
+  // IBAN leeren wenn Kreditkarte gewählt wird
+  useEffect(() => {
+    if (isKreditkarte) {
+      setValue('reimbursement_iban', '')
+      setValue('reimbursement_account_holder', '')
+    }
+  }, [isKreditkarte])
+
+  function handleEmployeeChange(userId: string) {
+    setValue('submitted_by_id', userId)
+    if (!userId || isKreditkarte) return
+    const selectedUser = users.find((u) => u.id === userId)
+    if (selectedUser?.iban) {
+      setValue('reimbursement_iban', selectedUser.iban)
+      setValue('reimbursement_account_holder', selectedUser.full_name)
+    } else {
+      setValue('reimbursement_iban', '')
+      setValue('reimbursement_account_holder', '')
+    }
+  }
+
   const createMutation = useMutation({
-    mutationFn: (data: FormData) => api.post('/expense-receipts', data),
+    mutationFn: (payload: FormData & { source_pending_file?: string }) => api.post('/expense-receipts', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expense-receipts'] })
+      queryClient.invalidateQueries({ queryKey: ['expense-receipts-pending'] })
       setDialogOpen(false)
-      toast({ title: 'Beleg eingereicht' })
+      toast({ title: pendingSourceFile ? 'Beleg aus Ordner übernommen' : 'Beleg eingereicht' })
+      setPendingSourceFile(null)
     },
     onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+  })
+
+  const deletePendingMutation = useMutation({
+    mutationFn: (filename: string) => api.delete(`/expense-receipts/pending/${encodeURIComponent(filename)}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expense-receipts-pending'] })
+      toast({ title: 'Datei gelöscht' })
+    },
+    onError: () => toast({ title: 'Fehler beim Löschen', variant: 'destructive' }),
+  })
+
+  const extractPendingMutation = useMutation({
+    mutationFn: (filename: string) =>
+      api.post(`/expense-receipts/pending/${encodeURIComponent(filename)}/extract`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expense-receipts-pending'] })
+      toast({ title: 'Extraktion gestartet' })
+    },
+    onError: () => toast({ title: 'Fehler bei der Extraktion', variant: 'destructive' }),
   })
 
   const updateMutation = useMutation({
@@ -240,29 +341,16 @@ export function ExpenseReceiptListPage() {
     onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
   })
 
-  const sepaExportMutation = useMutation({
-    mutationFn: () => api.post('/expense-receipts/sepa-export', null, { responseType: 'blob' }),
-    onSuccess: (res) => {
-      const url = URL.createObjectURL(res.data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `sepa_belege_${new Date().toISOString().slice(0, 10)}.xml`
-      a.click()
-      URL.revokeObjectURL(url)
-      queryClient.invalidateQueries({ queryKey: ['expense-receipts'] })
-      toast({ title: 'SEPA-Export erstellt' })
-    },
-    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
-  })
-
   function openCreate() {
     setEditing(null)
+    setPendingSourceFile(null)
     reset({ receipt_date: new Date().toISOString().slice(0, 10), vat_rate: 19 })
     setDialogOpen(true)
   }
 
   function openEdit(r: ExpenseReceipt) {
     setEditing(r)
+    setPendingSourceFile(null)
     reset({
       receipt_date: r.receipt_date,
       merchant: r.merchant || '',
@@ -280,11 +368,35 @@ export function ExpenseReceiptListPage() {
     setDialogOpen(true)
   }
 
+  function openFromPending(pf: PendingReceipt) {
+    setEditing(null)
+    setPendingSourceFile(pf.filename)
+    const d = pf.extracted ?? {}
+    reset({
+      receipt_date: d.receipt_date ?? new Date().toISOString().slice(0, 10),
+      merchant: d.merchant ?? '',
+      amount_gross: parseFloat(String(d.amount_gross ?? '0')) || 0,
+      vat_amount: parseFloat(String(d.vat_amount ?? '0')) || 0,
+      amount_net: parseFloat(String(d.amount_net ?? '0')) || 0,
+      vat_rate: parseFloat(String(d.vat_rate ?? '19')) || 19,
+      category: d.category ?? '',
+      description: d.description ?? '',
+      payment_method: d.payment_method ?? '',
+      reimbursement_iban: '',
+      reimbursement_account_holder: '',
+      notes: '',
+      submitted_by_id: user?.id ?? '',
+    })
+    setDialogOpen(true)
+  }
+
   function onSubmit(data: FormData) {
     if (editing) {
       updateMutation.mutate({ id: editing.id, data })
     } else {
-      createMutation.mutate(data)
+      const payload: any = { ...data }
+      if (pendingSourceFile) payload.source_pending_file = pendingSourceFile
+      createMutation.mutate(payload)
     }
   }
 
@@ -295,8 +407,6 @@ export function ExpenseReceiptListPage() {
 
   const ownItems = ownData?.items ?? []
   const allItems = allData?.items ?? []
-  const approvedCount = allItems.filter(r => r.status === 'approved' && r.reimbursement_iban).length
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -304,20 +414,83 @@ export function ExpenseReceiptListPage() {
           <h1 className="text-2xl font-bold text-slate-900">Belege</h1>
           <p className="text-sm text-slate-500 mt-1">Ausgaben und Erstattungen</p>
         </div>
-        <div className="flex gap-2">
-          {isAdmin && approvedCount > 0 && (
-            <Button variant="outline" onClick={() => sepaExportMutation.mutate()}>
-              {sepaExportMutation.isPending
-                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                : <Download className="h-4 w-4 mr-2" />}
-              SEPA Erstattungen ({approvedCount})
-            </Button>
-          )}
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-2" /> Beleg einreichen
-          </Button>
-        </div>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-2" /> Beleg einreichen
+        </Button>
       </div>
+
+      {/* Pending-Panel: Belege aus dem Ordner */}
+      {isAdmin && pendingFiles.length > 0 && (
+        <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold text-amber-900 text-sm">
+              Eingang Ordner – {pendingFiles.length} Beleg(e) warten auf Übernahme
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => refetchPending()}>
+              <RefreshCw className="h-3 w-3 mr-1" /> Aktualisieren
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {pendingFiles.map((pf) => (
+              <div key={pf.filename} className="flex items-center gap-3 bg-white rounded border px-3 py-2 text-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{pf.filename}</div>
+                  {pf.extraction_error ? (
+                    <div className="text-xs text-red-600">Fehler: {pf.extraction_error}</div>
+                  ) : pf.extracted ? (
+                    <div className="text-xs text-slate-500 flex gap-3 flex-wrap">
+                      {pf.extracted.merchant && <span>Händler: <strong>{pf.extracted.merchant}</strong></span>}
+                      {pf.extracted.amount_gross && <span>Betrag: <strong>{formatCurrency(String(pf.extracted.amount_gross))}</strong></span>}
+                      {pf.extracted.receipt_date && <span>Datum: {pf.extracted.receipt_date}</span>}
+                      {pf.extracted.category && <span className="text-slate-400">{pf.extracted.category}</span>}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400">Extraktion ausstehend…</div>
+                  )}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Vorschau"
+                    onClick={() => openDocument(`/expense-receipts/pending/${encodeURIComponent(pf.filename)}/download`)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  {pf.extraction_error && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Erneut extrahieren"
+                      onClick={() => extractPendingMutation.mutate(pf.filename)}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Als Beleg übernehmen"
+                    onClick={() => openFromPending(pf)}
+                    className="text-green-700"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Löschen"
+                    onClick={() => deletePendingMutation.mutate(pf.filename)}
+                    className="text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <select
@@ -347,6 +520,7 @@ export function ExpenseReceiptListPage() {
               onApprove={(r) => statusMutation.mutate({ id: r.id, status: 'approved' })}
               onReject={(r) => statusMutation.mutate({ id: r.id, status: 'rejected' })}
               onUpload={handleUpload}
+              onReset={(r) => statusMutation.mutate({ id: r.id, status: 'approved' })}
             />
           </TabsContent>
           <TabsContent value="own" className="mt-4">
@@ -358,6 +532,7 @@ export function ExpenseReceiptListPage() {
               onApprove={(r) => statusMutation.mutate({ id: r.id, status: 'approved' })}
               onReject={(r) => statusMutation.mutate({ id: r.id, status: 'rejected' })}
               onUpload={handleUpload}
+              onReset={() => {}}
             />
           </TabsContent>
         </Tabs>
@@ -370,6 +545,7 @@ export function ExpenseReceiptListPage() {
           onApprove={() => {}}
           onReject={() => {}}
           onUpload={handleUpload}
+          onReset={() => {}}
         />
       )}
 
@@ -390,11 +566,36 @@ export function ExpenseReceiptListPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Beleg bearbeiten' : 'Beleg einreichen'}</DialogTitle>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>
+              {editing ? 'Beleg bearbeiten' : pendingSourceFile ? 'Beleg aus Ordner übernehmen' : 'Beleg einreichen'}
+            </DialogTitle>
+            {pendingSourceFile && (
+              <p className="text-xs text-muted-foreground mt-1">Datei: {pendingSourceFile}</p>
+            )}
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+            {/* Eingereicht von: nur bei Pending-Übernahme durch Admin */}
+            {pendingSourceFile && isAdmin && (
+              <div className="space-y-2 rounded-md border px-3 py-2 bg-slate-50">
+                <Label>Eingereicht von</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                  value={watchedSubmittedById || ''}
+                  onChange={(e) => handleEmployeeChange(e.target.value)}
+                >
+                  <option value="">– Mich selbst (Admin) –</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Die IBAN wird automatisch aus dem Mitarbeiterstamm übernommen.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Belegdatum *</Label>
@@ -444,29 +645,43 @@ export function ExpenseReceiptListPage() {
             </div>
 
             <div className="border-t pt-4">
-              <div className="text-sm font-semibold text-slate-700 mb-3">Bankverbindung für Erstattung</div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 space-y-2">
-                  <Label>IBAN</Label>
-                  <Input {...register('reimbursement_iban')} placeholder="DE..." />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label>Kontoinhaber</Label>
-                  <Input {...register('reimbursement_account_holder')} />
-                </div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-semibold text-slate-700">Bankverbindung für Erstattung</span>
+                {isKreditkarte && (
+                  <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                    <CreditCard className="h-3 w-3" />
+                    Kreditkarte – keine Überweisung
+                  </span>
+                )}
               </div>
+              {isKreditkarte ? (
+                <p className="text-sm text-slate-500 bg-slate-50 border rounded-md px-3 py-2">
+                  Bei Kreditkartenzahlungen erfolgt keine Erstattung per Überweisung. Dieser Beleg wird beim SEPA-Export nicht berücksichtigt.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 space-y-2">
+                    <Label>IBAN</Label>
+                    <Input {...register('reimbursement_iban')} placeholder="DE..." className="font-mono" />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label>Kontoinhaber</Label>
+                    <Input {...register('reimbursement_account_holder')} />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label>Notizen</Label>
               <Input {...register('notes')} />
             </div>
-
-            <DialogFooter>
+            </div>
+            <DialogFooter className="shrink-0 pt-4">
               <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>Abbrechen</Button>
               <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
                 {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editing ? 'Speichern' : 'Einreichen'}
+                {editing ? 'Speichern' : pendingSourceFile ? 'Übernehmen' : 'Einreichen'}
               </Button>
             </DialogFooter>
           </form>

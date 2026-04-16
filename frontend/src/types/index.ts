@@ -11,6 +11,8 @@ export interface User {
   full_name: string
   role: UserRole
   is_active: boolean
+  iban?: string
+  bic?: string
   created_at: string
   updated_at: string
 }
@@ -234,6 +236,8 @@ export interface CreditorShort {
   company_name?: string
   first_name?: string
   last_name?: string
+  iban?: string
+  bic?: string
 }
 
 export interface IncomingInvoice {
@@ -257,6 +261,7 @@ export interface IncomingInvoice {
   paid_at?: string
   document_path?: string
   notes?: string
+  is_direct_debit: boolean
   created_at: string
   updated_at: string
 }

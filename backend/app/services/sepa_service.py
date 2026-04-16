@@ -2,12 +2,16 @@
 SEPA pain.001.003.03 credit transfer generator.
 Covers both outgoing customer debits and creditor/expense credit transfers.
 """
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 import uuid as uuidlib
 
 from app.config import settings
+
+# Valides BIC-Muster (ISO 9362)
+_BIC_RE = re.compile(r'^[A-Z]{6}[A-Z2-9][A-NP-Z0-9]([A-Z0-9]{3})?$')
 
 
 class SepaService:
@@ -198,26 +202,62 @@ class SepaService:
         return self._build_credit_transfer_xml(items, exec_date)
 
     def generate_expense_pain001(self, receipts: list, execution_date: Optional[date] = None) -> bytes:
-        """Generate SEPA credit transfer XML for approved expense receipts."""
+        """Generate SEPA credit transfer XML for approved expense receipts.
+        IBAN and BIC are always read from the submitter's master record (User),
+        not from the reimbursement fields stored on the receipt.
+        """
         exec_date = execution_date or date.today()
         items = []
         for r in receipts:
-            if not r.reimbursement_iban:
+            if not r.submitter or not r.submitter.iban:
                 continue
-            name = (
-                r.reimbursement_account_holder
-                or (r.submitter.full_name if r.submitter else None)
-                or "Unbekannt"
-            )
+            name = r.submitter.full_name or "Unbekannt"
             items.append({
                 "name": name,
-                "iban": r.reimbursement_iban,
-                "bic": "NOTPROVIDED",
+                "iban": r.submitter.iban,
+                "bic": r.submitter.bic or "NOTPROVIDED",
                 "amount": Decimal(str(r.amount_gross)),
                 "reference": r.receipt_number,
                 "description": f"Beleg {r.receipt_number}",
             })
         return self._build_credit_transfer_xml(items, exec_date)
+
+    @staticmethod
+    def _x(text: str) -> str:
+        """XML-Sonderzeichen escapen."""
+        return (str(text)
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+                .replace("'", "&apos;"))
+
+    @staticmethod
+    def _norm_iban(iban: str) -> str:
+        """Leerzeichen entfernen und Großschreibung sicherstellen."""
+        return iban.replace(" ", "").replace("\t", "").upper()
+
+    @staticmethod
+    def _cdtr_agt(bic: str) -> str:
+        """CdtrAgt-Element: gültiges BIC direkt, sonst Othr/NOTPROVIDED."""
+        bic_clean = (bic or "").strip().upper()
+        if _BIC_RE.match(bic_clean):
+            return (
+                "        <CdtrAgt>\n"
+                "          <FinInstnId>\n"
+                f"            <BIC>{bic_clean}</BIC>\n"
+                "          </FinInstnId>\n"
+                "        </CdtrAgt>"
+            )
+        return (
+            "        <CdtrAgt>\n"
+            "          <FinInstnId>\n"
+            "            <Othr>\n"
+            "              <Id>NOTPROVIDED</Id>\n"
+            "            </Othr>\n"
+            "          </FinInstnId>\n"
+            "        </CdtrAgt>"
+        )
 
     def _build_credit_transfer_xml(self, items: list, exec_date: date) -> bytes:
         """Build a pain.001.003.03 credit transfer XML from a list of payment dicts."""
@@ -233,38 +273,66 @@ class SepaService:
             amount = item["amount"]
             total_amount += amount
             tx_count += 1
+
+            iban = self._norm_iban(item["iban"])
+            name = self._x(item["name"][:70])
+            description = self._x(item["description"][:140])
+            reference = self._x(item["reference"][:35])
+            cdtr_agt = self._cdtr_agt(item.get("bic", ""))
+
             transactions.append(f"""
       <CdtTrfTxInf>
         <PmtId>
-          <EndToEndId>{item['reference'][:35]}</EndToEndId>
+          <EndToEndId>{reference}</EndToEndId>
         </PmtId>
         <Amt>
           <InstdAmt Ccy="EUR">{amount:.2f}</InstdAmt>
         </Amt>
-        <CdtrAgt>
-          <FinInstnId>
-            <BIC>{item['bic']}</BIC>
-          </FinInstnId>
-        </CdtrAgt>
+{cdtr_agt}
         <Cdtr>
-          <Nm>{item['name'][:70]}</Nm>
+          <Nm>{name}</Nm>
         </Cdtr>
         <CdtrAcct>
           <Id>
-            <IBAN>{item['iban']}</IBAN>
+            <IBAN>{iban}</IBAN>
           </Id>
         </CdtrAcct>
         <RmtInf>
-          <Ustrd>{item['description'][:140]}</Ustrd>
+          <Ustrd>{description}</Ustrd>
         </RmtInf>
       </CdtTrfTxInf>""")
 
         if tx_count == 0:
             raise ValueError("Keine zahlbaren Positionen (fehlende IBAN)")
 
+        # Debtor-BIC
+        dbtr_bic = (settings.company_bic or "").strip().upper()
+        if _BIC_RE.match(dbtr_bic):
+            dbtr_agt_xml = (
+                "      <DbtrAgt>\n"
+                "        <FinInstnId>\n"
+                f"          <BIC>{dbtr_bic}</BIC>\n"
+                "        </FinInstnId>\n"
+                "      </DbtrAgt>"
+            )
+        else:
+            dbtr_agt_xml = (
+                "      <DbtrAgt>\n"
+                "        <FinInstnId>\n"
+                "          <Othr>\n"
+                "            <Id>NOTPROVIDED</Id>\n"
+                "          </Othr>\n"
+                "        </FinInstnId>\n"
+                "      </DbtrAgt>"
+            )
+
+        dbtr_iban = self._norm_iban(settings.company_iban or "DE00000000000000000000")
+        company = self._x(settings.company_name)
+
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.003.03"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:pain.001.003.03 pain.001.003.03.xsd">
   <CstmrCdtTrfInitn>
     <GrpHdr>
       <MsgId>{msg_id}</MsgId>
@@ -272,12 +340,13 @@ class SepaService:
       <NbOfTxs>{tx_count}</NbOfTxs>
       <CtrlSum>{total_amount:.2f}</CtrlSum>
       <InitgPty>
-        <Nm>{settings.company_name}</Nm>
+        <Nm>{company}</Nm>
       </InitgPty>
     </GrpHdr>
     <PmtInf>
       <PmtInfId>{msg_id}-1</PmtInfId>
       <PmtMtd>TRF</PmtMtd>
+      <BtchBookg>false</BtchBookg>
       <NbOfTxs>{tx_count}</NbOfTxs>
       <CtrlSum>{total_amount:.2f}</CtrlSum>
       <PmtTpInf>
@@ -287,19 +356,15 @@ class SepaService:
       </PmtTpInf>
       <ReqdExctnDt>{exec_date_str}</ReqdExctnDt>
       <Dbtr>
-        <Nm>{settings.company_name}</Nm>
+        <Nm>{company}</Nm>
       </Dbtr>
       <DbtrAcct>
         <Id>
-          <IBAN>{settings.company_iban or 'DE00000000000000000000'}</IBAN>
+          <IBAN>{dbtr_iban}</IBAN>
         </Id>
         <Ccy>EUR</Ccy>
       </DbtrAcct>
-      <DbtrAgt>
-        <FinInstnId>
-          <BIC>{settings.company_bic or 'NOTPROVIDED'}</BIC>
-        </FinInstnId>
-      </DbtrAgt>
+{dbtr_agt_xml}
       {''.join(transactions)}
     </PmtInf>
   </CstmrCdtTrfInitn>

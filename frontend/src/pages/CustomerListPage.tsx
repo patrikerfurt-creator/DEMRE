@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/hooks/use-toast'
-import { formatDate } from '@/lib/utils'
+import { formatDate, validateIban, lookupBicFromIban } from '@/lib/utils'
 
 const schema = z.object({
   customer_number: z.string().optional(),
@@ -32,7 +32,10 @@ const schema = z.object({
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional(),
   vat_id: z.string().optional(),
-  iban: z.string().optional(),
+  iban: z.string().optional().refine(
+    (val) => !val || validateIban(val),
+    { message: 'Ungültige IBAN' }
+  ),
   bic: z.string().optional(),
   bank_name: z.string().optional(),
   account_holder: z.string().optional(),
@@ -53,6 +56,7 @@ export function CustomerListPage() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [previewRows, setPreviewRows] = useState<CustomerImportRow[]>([])
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [bicLoading, setBicLoading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading } = useQuery({
@@ -63,7 +67,7 @@ export function CustomerListPage() {
       }).then((r) => r.data),
   })
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, control, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { customer_type: 'weg' },
   })
@@ -564,11 +568,25 @@ export function CustomerListPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2 col-span-2">
                     <Label>IBAN</Label>
-                    <Input {...register('iban')} />
+                    <Input
+                      {...register('iban')}
+                      onBlur={async (e) => {
+                        const val = e.target.value.replace(/\s/g, '').toUpperCase()
+                        if (!val || !validateIban(val)) return
+                        setBicLoading(true)
+                        const bic = await lookupBicFromIban(val)
+                        setBicLoading(false)
+                        if (bic) setValue('bic', bic)
+                      }}
+                    />
+                    {errors.iban && <p className="text-xs text-red-500">{errors.iban.message}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label>BIC</Label>
-                    <Input {...register('bic')} />
+                    <div className="relative">
+                      <Input {...register('bic')} />
+                      {bicLoading && <Loader2 className="absolute right-2 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Bank</Label>

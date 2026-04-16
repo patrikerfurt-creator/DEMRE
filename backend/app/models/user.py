@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from sqlalchemy import String, Boolean, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
@@ -25,3 +26,5 @@ class User(Base, TimestampMixin):
         SAEnum(UserRole, name="userrole"), nullable=False, default=UserRole.user
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    iban: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    bic: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)

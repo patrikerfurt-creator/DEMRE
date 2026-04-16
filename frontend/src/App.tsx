@@ -17,6 +17,7 @@ import { CreditorListPage } from '@/pages/CreditorListPage'
 import { CreditorDetailPage } from '@/pages/CreditorDetailPage'
 import { IncomingInvoiceListPage } from '@/pages/IncomingInvoiceListPage'
 import { ExpenseReceiptListPage } from '@/pages/ExpenseReceiptListPage'
+import { MitarbeiterListPage } from '@/pages/MitarbeiterListPage'
 
 function RequireAuth() {
   const token = useAuthStore((s) => s.token)
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="/creditors/:id" element={<CreditorDetailPage />} />
           <Route path="/incoming-invoices" element={<IncomingInvoiceListPage />} />
           <Route path="/expense-receipts" element={<ExpenseReceiptListPage />} />
+          <Route path="/mitarbeiter" element={<MitarbeiterListPage />} />
         </Route>
       </Route>
 

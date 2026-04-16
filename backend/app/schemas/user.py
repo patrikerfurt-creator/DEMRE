@@ -10,6 +10,8 @@ class UserBase(BaseModel):
     full_name: str
     role: UserRole = UserRole.user
     is_active: bool = True
+    iban: Optional[str] = None
+    bic: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -22,6 +24,8 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    iban: Optional[str] = None
+    bic: Optional[str] = None
 
 
 class UserResponse(UserBase):

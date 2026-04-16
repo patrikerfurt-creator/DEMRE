@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Package, FileText, Receipt,
-  Download, Settings, LogOut, TrendingDown, FileInput, Wallet, FilePlus
+  Download, Settings, LogOut, TrendingDown, FileInput, Wallet, FilePlus, UserCog
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
@@ -24,6 +24,10 @@ const kreditorenItems = [
 const systemItems = [
   { to: '/exports', label: 'Exporte', icon: Download },
   { to: '/settings', label: 'Einstellungen', icon: Settings },
+]
+
+const adminItems = [
+  { to: '/mitarbeiter', label: 'Mitarbeiter', icon: UserCog },
 ]
 
 export function Sidebar() {
@@ -90,6 +94,7 @@ export function Sidebar() {
         <NavGroup label="Debitoren" items={debitorenItems} />
         <NavGroup label="Kreditoren" items={kreditorenItems} />
         <NavGroup label="System" items={systemItems} />
+        {user?.role === 'admin' && <NavGroup label="Administration" items={adminItems} />}
       </nav>
 
       {/* User + Logout */}

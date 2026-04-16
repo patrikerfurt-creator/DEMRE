@@ -148,6 +148,7 @@ async def list_pending_files(
             "extracted": sidecar.get("data"),
             "extraction_error": sidecar.get("extraction_error"),
             "matched_creditor": sidecar.get("matched_creditor"),
+            "is_direct_debit": sidecar.get("is_direct_debit", False),
         })
     return {"files": files}
 
@@ -177,6 +178,7 @@ async def extract_pending_file(
         "source_file": safe_name,
         "extraction_error": extracted.get("extraction_error"),
         "matched_creditor": matched_creditor,
+        "is_direct_debit": bool(extracted.get("is_direct_debit", False)),
         "data": {k: v for k, v in extracted.items() if k != "extraction_error"},
     }
     stem = os.path.splitext(safe_name)[0]

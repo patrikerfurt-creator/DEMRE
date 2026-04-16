@@ -38,14 +38,32 @@ Felder (null wenn nicht vorhanden oder nicht lesbar):
   "total_gross": "Bruttobetrag als Dezimalzahl",
   "vat_rate": "MwSt-Satz in Prozent als Zahl z.B. 19.0",
   "currency": "Währungskürzel z.B. EUR",
-  "description": "Kurze Beschreibung der Leistung oder Ware (max 200 Zeichen)"
+  "description": "Kurze Beschreibung der Leistung oder Ware (max 200 Zeichen)",
+  "is_direct_debit": true wenn die Rechnung auf SEPA-Lastschrift/Bankeinzug hinweist (Begriffe: Lastschrift, wird abgebucht, Bankeinzug, SEPA-Mandat, Einzugsermächtigung), sonst false
 }"""
 
 
-async def extract_invoice_data(filepath: str) -> dict:
+RECEIPT_EXTRACTION_PROMPT = """Analysiere diesen Beleg (Kassenbon, Quittung, Rechnung) und extrahiere alle relevanten Daten.
+Antworte NUR mit einem validen JSON-Objekt, ohne Markdown-Code-Blöcke oder sonstige Erläuterungen.
+
+Felder (null wenn nicht vorhanden oder nicht lesbar):
+{
+  "merchant": "Name des Händlers oder Lieferanten",
+  "receipt_date": "Belegdatum als YYYY-MM-DD",
+  "amount_gross": "Bruttobetrag als Dezimalzahl z.B. 42.50",
+  "vat_amount": "MwSt-Betrag als Dezimalzahl oder 0",
+  "amount_net": "Nettobetrag als Dezimalzahl oder 0",
+  "vat_rate": "MwSt-Satz in Prozent als Zahl z.B. 19.0",
+  "currency": "Währungskürzel z.B. EUR",
+  "category": "Eine der folgenden Kategorien je nach Beleginhalt: Büromaterial, Reisekosten, Bewirtung, Porto, Telefon, Software, Sonstiges",
+  "description": "Kurze Beschreibung des Kaufs (max 150 Zeichen)",
+  "payment_method": "Zahlungsart wenn erkennbar: Bar, EC-Karte, Kreditkarte, Überweisung — sonst null"
+}"""
+
+
+async def _extract_with_prompt(filepath: str, prompt: str) -> dict:
     """
-    Extrahiert Rechnungsdaten aus einer Datei mit Claude Vision.
-    Gibt ein dict mit den extrahierten Feldern zurück.
+    Gemeinsame Hilfsfunktion: Sendet eine Datei + Prompt an Claude Vision und gibt das geparste JSON zurück.
     Bei Fehler: dict mit 'extraction_error'-Schlüssel.
     """
     from app.config import settings
@@ -92,29 +110,50 @@ async def extract_invoice_data(filepath: str) -> dict:
                     "role": "user",
                     "content": [
                         content_block,
-                        {"type": "text", "text": EXTRACTION_PROMPT},
+                        {"type": "text", "text": prompt},
                     ],
                 }
             ],
         )
 
         raw = response.content[0].text.strip()
-        # Markdown-Code-Blöcke entfernen falls das Modell sie trotzdem einfügt
         if raw.startswith("```"):
             raw = raw.split("```", 2)[1]
             if raw.startswith("json"):
                 raw = raw[4:]
             raw = raw.strip()
-        data = json.loads(raw)
-        logger.info("invoice_extractor.success", filepath=filepath, creditor=data.get("creditor_name"))
-        return data
+        return json.loads(raw)
 
     except json.JSONDecodeError as e:
-        logger.error("invoice_extractor.json_error", filepath=filepath, error=str(e))
+        logger.error("extractor.json_error", filepath=filepath, error=str(e))
         return {"extraction_error": f"Ungültiges JSON vom Modell: {e}"}
     except Exception as e:
-        logger.error("invoice_extractor.error", filepath=filepath, error=str(e))
+        logger.error("extractor.error", filepath=filepath, error=str(e))
         return {"extraction_error": str(e)}
+
+
+async def extract_invoice_data(filepath: str) -> dict:
+    """
+    Extrahiert Rechnungsdaten aus einer Eingangsrechnung mit Claude Vision.
+    Gibt ein dict mit den extrahierten Feldern zurück (inkl. is_direct_debit).
+    Bei Fehler: dict mit 'extraction_error'-Schlüssel.
+    """
+    data = await _extract_with_prompt(filepath, EXTRACTION_PROMPT)
+    if "extraction_error" not in data:
+        logger.info("invoice_extractor.success", filepath=filepath, creditor=data.get("creditor_name"))
+    return data
+
+
+async def extract_receipt_data(filepath: str) -> dict:
+    """
+    Extrahiert Belegdaten (Kassenbon/Quittung) aus einer Datei mit Claude Vision.
+    Gibt ein dict mit merchant, receipt_date, amount_gross etc. zurück.
+    Bei Fehler: dict mit 'extraction_error'-Schlüssel.
+    """
+    data = await _extract_with_prompt(filepath, RECEIPT_EXTRACTION_PROMPT)
+    if "extraction_error" not in data:
+        logger.info("receipt_extractor.success", filepath=filepath, merchant=data.get("merchant"))
+    return data
 
 
 async def find_matching_creditor(extracted_name: Optional[str], db) -> Optional[dict]:

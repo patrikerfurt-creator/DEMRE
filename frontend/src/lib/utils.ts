@@ -76,3 +76,36 @@ export const BILLING_PERIOD_LABELS: Record<string, string> = {
   annual: "Jährlich",
   "one-time": "Einmalig",
 }
+
+/** Schlägt den BIC anhand der IBAN über die openiban.com-API nach. */
+export async function lookupBicFromIban(iban: string): Promise<string | null> {
+  const clean = iban.replace(/\s/g, '').toUpperCase()
+  if (!validateIban(clean)) return null
+  try {
+    const res = await fetch(`https://openiban.com/validate/${clean}?getBIC=true`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return (data?.bankData?.bic as string) || null
+  } catch {
+    return null
+  }
+}
+
+/** Prüft eine IBAN per ISO-7064-Prüfsumme (Mod-97). Leerzeichen werden ignoriert. */
+export function validateIban(raw: string): boolean {
+  const iban = raw.replace(/\s/g, '').toUpperCase()
+  if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{1,30}$/.test(iban)) return false
+  const rearranged = iban.slice(4) + iban.slice(0, 4)
+  const numeric = rearranged
+    .split('')
+    .map((c) => {
+      const code = c.charCodeAt(0)
+      return code >= 65 ? String(code - 55) : c
+    })
+    .join('')
+  let remainder = 0
+  for (const ch of numeric) {
+    remainder = (remainder * 10 + parseInt(ch, 10)) % 97
+  }
+  return remainder === 1
+}

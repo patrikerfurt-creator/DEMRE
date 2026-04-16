@@ -22,6 +22,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./Eingangsrechnungen:/app/incoming_invoices
+      - ./Belege:/app/expense_receipts
 
   frontend:
     build:

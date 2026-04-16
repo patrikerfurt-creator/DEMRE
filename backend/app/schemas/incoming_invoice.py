@@ -19,6 +19,7 @@ class IncomingInvoiceBase(BaseModel):
     description: Optional[str] = None
     cost_account: Optional[str] = None
     notes: Optional[str] = None
+    is_direct_debit: bool = False
 
 
 class IncomingInvoiceCreate(IncomingInvoiceBase):
@@ -38,6 +39,7 @@ class IncomingInvoiceUpdate(BaseModel):
     description: Optional[str] = None
     cost_account: Optional[str] = None
     notes: Optional[str] = None
+    is_direct_debit: Optional[bool] = None
 
 
 class IncomingInvoiceStatusUpdate(BaseModel):
@@ -50,6 +52,8 @@ class CreditorShort(BaseModel):
     company_name: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    iban: Optional[str] = None
+    bic: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

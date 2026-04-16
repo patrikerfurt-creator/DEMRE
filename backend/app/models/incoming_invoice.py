@@ -3,7 +3,7 @@ import enum
 from typing import Optional
 from decimal import Decimal
 from datetime import date, datetime
-from sqlalchemy import String, Text, Numeric, Date, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, Text, Numeric, Date, DateTime, Boolean, ForeignKey, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import Base, TimestampMixin
@@ -50,6 +50,8 @@ class IncomingInvoice(Base, TimestampMixin):
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     document_path: Mapped[Optional[str]] = mapped_column(String(500))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    # Einzugsermächtigung: True = Lastschrift, wird nicht in SEPA-Überweisung aufgenommen
+    is_direct_debit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     creditor: Mapped["Creditor"] = relationship("Creditor", back_populates="incoming_invoices", lazy="select")
     approver: Mapped[Optional["User"]] = relationship(
