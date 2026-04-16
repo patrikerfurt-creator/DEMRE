@@ -2,7 +2,7 @@
   "sftp_host": "87.106.219.148",
   "sftp_port": 22,
   "sftp_user": "patrik",
-  "sftp_password": "IhrServerPasswort",
+  "sftp_key_file": "C:\\Users\\maurer\\.ssh\\strato_server_key",
   "remote_incoming_invoices_dir": "/opt/DEMRE/Eingangsrechnungen",
   "remote_expense_receipts_dir": "/opt/DEMRE/Belege",
   "local_incoming_invoices_folder": "\\\\192.168.161.11\\daten\\1-Scan\\DEM_ER",

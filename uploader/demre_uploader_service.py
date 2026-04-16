@@ -42,21 +42,28 @@ def setup_logging():
 # ── SFTP ──────────────────────────────────────────────────────────────────────
 def sftp_upload(local_path: Path, remote_dir: str, config: dict) -> bool:
     """
-    Lädt eine Datei per SFTP hoch.
+    Lädt eine Datei per SFTP mit SSH-Schlüssel hoch.
     Versucht es bei Fehler bis zu 3-mal, dann wird aufgegeben.
     """
     host     = config["sftp_host"]
     port     = int(config.get("sftp_port", 22))
     user     = config["sftp_user"]
-    password = config["sftp_password"]
+    key_file = config["sftp_key_file"]
 
     for attempt in range(1, 4):
-        transport = None
+        client = None
         try:
-            transport = paramiko.Transport((host, port))
-            transport.connect(username=user, password=password)
-            sftp = paramiko.SFTPClient.from_transport(transport)
-
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(
+                hostname=host,
+                port=port,
+                username=user,
+                key_filename=key_file,
+                look_for_keys=False,
+                allow_agent=False,
+            )
+            sftp = client.open_sftp()
             remote_path = f"{remote_dir}/{local_path.name}"
             sftp.put(str(local_path), remote_path)
             sftp.close()
@@ -69,8 +76,8 @@ def sftp_upload(local_path: Path, remote_dir: str, config: dict) -> bool:
             if attempt < 3:
                 time.sleep(5)
         finally:
-            if transport:
-                transport.close()
+            if client:
+                client.close()
 
     logging.error(f"Upload endgültig fehlgeschlagen: {local_path.name}")
     return False
