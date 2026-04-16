@@ -164,7 +164,7 @@ class FolderHandler(FileSystemEventHandler):
                 self._active.discard(str(path))
 
     def _archive(self, path: Path):
-        """Verschiebt die hochgeladene Datei in Hochgeladen\YYYY-MM-DD\."""
+        """Verschiebt die hochgeladene Datei in Hochgeladen\\YYYY-MM-DD\\."""
         dest_dir = self.archive_root / datetime.now().strftime("%Y-%m-%d")
         dest_dir.mkdir(parents=True, exist_ok=True)
 
