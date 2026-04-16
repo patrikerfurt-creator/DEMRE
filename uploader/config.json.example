@@ -1,0 +1,10 @@
+{
+  "sftp_host": "87.106.219.148",
+  "sftp_port": 22,
+  "sftp_user": "patrik",
+  "sftp_password": "IhrServerPasswort",
+  "remote_incoming_invoices_dir": "/opt/DEMRE/Eingangsrechnungen",
+  "remote_expense_receipts_dir": "/opt/DEMRE/Belege",
+  "local_incoming_invoices_folder": "C:\\Eingangsrechnungen",
+  "local_expense_receipts_folder": "C:\\Belege"
+}
