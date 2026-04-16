@@ -261,10 +261,44 @@ async def update_invoice_status(
         invoice.paid_at = now
     elif data.status == InvoiceStatus.cancelled:
         invoice.cancelled_at = now
+    elif data.status == InvoiceStatus.issued:
+        await _export_invoice_to_outgoing(invoice, db)
 
     await db.flush()
     await db.refresh(invoice)
     return InvoiceResponse.model_validate(invoice)
+
+
+async def _export_invoice_to_outgoing(invoice: Invoice, db: AsyncSession):
+    """Generiert das PDF (falls nötig) und kopiert es in den Ausgangsrechnungen-Export-Ordner."""
+    import shutil
+    from app.models.customer import Customer
+    from app.models.article import Article
+    from app.config import settings
+
+    # Kundendaten und Artikel für PDF-Generierung laden
+    customer_result = await db.execute(select(Customer).where(Customer.id == invoice.customer_id))
+    invoice.customer = customer_result.scalar_one_or_none()
+    for item in invoice.items:
+        if item.article_id:
+            art_result = await db.execute(select(Article).where(Article.id == item.article_id))
+            item.article = art_result.scalar_one_or_none()
+
+    pdf_dir = os.path.join(settings.storage_path, "invoices")
+    os.makedirs(pdf_dir, exist_ok=True)
+
+    if not invoice.pdf_path or not os.path.exists(invoice.pdf_path):
+        service = ZugferdService()
+        pdf_bytes = service.generate_pdf(invoice)
+        pdf_path = os.path.join(pdf_dir, f"{invoice.invoice_number}.pdf")
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+        invoice.pdf_path = pdf_path
+        await db.flush()
+
+    export_dir = os.path.join(settings.storage_path, "invoices", "outgoing_export")
+    os.makedirs(export_dir, exist_ok=True)
+    shutil.copy2(invoice.pdf_path, os.path.join(export_dir, f"{invoice.invoice_number}.pdf"))
 
 
 @router.get("/{invoice_id}/pdf")

@@ -21,8 +21,8 @@ class CompanySettings(BaseModel):
     company_iban: Optional[str] = None
     company_bic: Optional[str] = None
     company_bank_name: Optional[str] = None
-    invoice_number_prefix: str
-    invoice_number_year_reset: bool
+    invoice_number_prefix: Optional[str] = None
+    invoice_number_year_reset: Optional[bool] = None
 
 
 @router.get("", response_model=CompanySettings)
@@ -40,8 +40,8 @@ async def get_settings(_: User = Depends(get_current_user)):
         company_iban=settings.company_iban,
         company_bic=settings.company_bic,
         company_bank_name=settings.company_bank_name,
-        invoice_number_prefix=settings.invoice_number_prefix,
-        invoice_number_year_reset=settings.invoice_number_year_reset,
+        invoice_number_prefix=None,
+        invoice_number_year_reset=None,
     )
 
 
@@ -63,8 +63,6 @@ async def update_settings(
     settings.company_iban = data.company_iban
     settings.company_bic = data.company_bic
     settings.company_bank_name = data.company_bank_name
-    settings.invoice_number_prefix = data.invoice_number_prefix
-    settings.invoice_number_year_reset = data.invoice_number_year_reset
 
     # Also persist to .env file
     import os
@@ -87,8 +85,6 @@ async def update_settings(
         "COMPANY_IBAN": data.company_iban or "",
         "COMPANY_BIC": data.company_bic or "",
         "COMPANY_BANK_NAME": data.company_bank_name or "",
-        "INVOICE_NUMBER_PREFIX": data.invoice_number_prefix,
-        "INVOICE_NUMBER_YEAR_RESET": str(data.invoice_number_year_reset).lower(),
     }
 
     updated_keys = set()

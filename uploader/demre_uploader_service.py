@@ -1,11 +1,13 @@
 """
 DEMRE Datei-Uploader — Windows-Dienst
-Überwacht lokale Ordner und überträgt neue Dateien per SFTP zum Server.
+Überwacht lokale Ordner, überträgt neue Dateien per SFTP zum Server
+und lädt ausgestellte Ausgangsrechnungen alle 10 Minuten herunter.
 """
 import sys
 import os
 import json
 import time
+import stat as stat_mod
 import logging
 import threading
 from pathlib import Path
@@ -178,6 +180,105 @@ class FolderHandler(FileSystemEventHandler):
         logging.info(f"Archiviert: {dest}")
 
 
+# ── Ausgangsrechnungen-Download ───────────────────────────────────────────────
+def _download_outgoing_invoices(config: dict, local_dir: Path, remote_dir: str):
+    """
+    Verbindet per SFTP zum Server, lädt neue PDFs aus `remote_dir` in `local_dir`
+    und verschiebt jede heruntergeladene Datei serverseitig nach `remote_dir/Archiv/`.
+    """
+    host     = config["sftp_host"]
+    port     = int(config.get("sftp_port", 22))
+    user     = config["sftp_user"]
+    key_file = config["sftp_key_file"]
+    archive  = f"{remote_dir}/Archiv"
+
+    client = None
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(
+            hostname=host,
+            port=port,
+            username=user,
+            key_filename=key_file,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        sftp = client.open_sftp()
+
+        # Remote-Ordner prüfen
+        try:
+            sftp.stat(remote_dir)
+        except FileNotFoundError:
+            logging.debug(f"Remote-Ordner noch nicht vorhanden: {remote_dir}")
+            sftp.close()
+            return
+
+        # Archiv-Unterordner anlegen falls nötig
+        try:
+            sftp.stat(archive)
+        except FileNotFoundError:
+            sftp.mkdir(archive)
+
+        entries = sftp.listdir_attr(remote_dir)
+        downloaded = 0
+
+        for entry in entries:
+            # Unterordner (z. B. Archiv) überspringen
+            if stat_mod.S_ISDIR(entry.st_mode):
+                continue
+            if not entry.filename.lower().endswith(".pdf"):
+                continue
+
+            remote_path = f"{remote_dir}/{entry.filename}"
+            local_path  = local_dir / entry.filename
+
+            # Bereits lokal vorhandene Datei nicht überschreiben, aber trotzdem archivieren
+            if not local_path.exists():
+                sftp.get(remote_path, str(local_path))
+                logging.info(f"Heruntergeladen: {entry.filename}  ←  {host}:{remote_path}")
+                downloaded += 1
+            else:
+                logging.debug(f"Bereits vorhanden, übersprungen: {entry.filename}")
+
+            # Serverseitig archivieren (verhindert erneutes Herunterladen)
+            sftp.rename(remote_path, f"{archive}/{entry.filename}")
+
+        if downloaded:
+            logging.info(f"{downloaded} Ausgangsrechnung(en) heruntergeladen.")
+        else:
+            logging.debug("Keine neuen Ausgangsrechnungen gefunden.")
+
+        sftp.close()
+
+    except Exception as exc:
+        logging.warning(f"Download Ausgangsrechnungen fehlgeschlagen: {exc}")
+    finally:
+        if client:
+            client.close()
+
+
+def _outgoing_download_loop(config: dict, stop_event: threading.Event):
+    """
+    Polling-Thread: ruft `_download_outgoing_invoices` sofort und dann alle
+    10 Minuten auf, bis `stop_event` gesetzt wird.
+    """
+    local_dir  = Path(config["local_outgoing_invoices_folder"])
+    remote_dir = config["remote_outgoing_invoices_dir"]
+    local_dir.mkdir(parents=True, exist_ok=True)
+    logging.info(f"Ausgangsrechnungen-Downloader aktiv (alle 10 min) → {local_dir}")
+
+    while not stop_event.is_set():
+        try:
+            _download_outgoing_invoices(config, local_dir, remote_dir)
+        except Exception as exc:
+            logging.error(f"Unerwarteter Fehler im Download-Thread: {exc}")
+        # 10 Minuten warten; stop_event beendet das Warten vorzeitig
+        stop_event.wait(600)
+
+    logging.info("Ausgangsrechnungen-Downloader beendet.")
+
+
 # ── Windows-Dienst ────────────────────────────────────────────────────────────
 class DemreUploaderService(win32serviceutil.ServiceFramework):
     _svc_name_        = SERVICE_NAME
@@ -186,12 +287,15 @@ class DemreUploaderService(win32serviceutil.ServiceFramework):
 
     def __init__(self, args):
         win32serviceutil.ServiceFramework.__init__(self, args)
-        self.stop_event = win32event.CreateEvent(None, 0, 0, None)
-        self.observer   = None
+        self.stop_event      = win32event.CreateEvent(None, 0, 0, None)
+        self.observer        = None
+        self._download_stop  = threading.Event()
+        self._download_thread = None
 
     def SvcStop(self):
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
         win32event.SetEvent(self.stop_event)
+        self._download_stop.set()
         if self.observer:
             self.observer.stop()
         logging.info("Dienst wird gestoppt …")
@@ -235,6 +339,17 @@ class DemreUploaderService(win32serviceutil.ServiceFramework):
         logging.info(f"Überwache Eingangsrechnungen : {incoming_dir}")
         logging.info(f"Überwache Belege             : {receipts_dir}")
         logging.info(f"SFTP-Ziel                    : {config['sftp_host']}")
+
+        # Polling-Thread für Ausgangsrechnungen-Download
+        if config.get("remote_outgoing_invoices_dir") and config.get("local_outgoing_invoices_folder"):
+            self._download_thread = threading.Thread(
+                target=_outgoing_download_loop,
+                args=(config, self._download_stop),
+                daemon=True,
+            )
+            self._download_thread.start()
+        else:
+            logging.info("Ausgangsrechnungen-Download nicht konfiguriert (Felder fehlen in config.json)")
 
         # Warten bis Dienst gestoppt wird
         win32event.WaitForSingleObject(self.stop_event, win32event.INFINITE)
