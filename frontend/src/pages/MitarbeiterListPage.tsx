@@ -86,7 +86,7 @@ export function MitarbeiterListPage() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (data: FormData) => api.post('/users', { ...data, password: data.password || 'Temp1234!' }),
+    mutationFn: (data: FormData) => api.post('/users', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       setDialogOpen(false)
@@ -131,6 +131,10 @@ export function MitarbeiterListPage() {
     if (editing) {
       updateMutation.mutate({ id: editing.id, data })
     } else {
+      if (!data.password) {
+        toast({ title: 'Passwort erforderlich', description: 'Bitte ein Passwort für den neuen Mitarbeiter vergeben.', variant: 'destructive' })
+        return
+      }
       createMutation.mutate(data)
     }
   }
@@ -258,11 +262,11 @@ export function MitarbeiterListPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>{editing ? 'Neues Passwort (leer lassen = unverändert)' : 'Passwort'}</Label>
+                <Label>{editing ? 'Neues Passwort (leer lassen = unverändert)' : 'Passwort *'}</Label>
                 <Input
                   {...register('password')}
                   type="password"
-                  placeholder={editing ? 'Leer lassen für keine Änderung' : 'Mindestens 8 Zeichen'}
+                  placeholder={editing ? 'Leer lassen für keine Änderung' : 'Login-Passwort für den Mitarbeiter'}
                 />
               </div>
 
