@@ -247,7 +247,9 @@ async def update_incoming_invoice_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_not_readonly),
 ):
+    from app.models.status_change_log import StatusChangeLog
     inv = await _get_invoice_or_404(invoice_id, db)
+    from_status = inv.status.value
     inv.status = data.status
     now = datetime.now(timezone.utc)
     if data.status == IncomingInvoiceStatus.approved:
@@ -255,8 +257,35 @@ async def update_incoming_invoice_status(
         inv.approved_at = now
     elif data.status == IncomingInvoiceStatus.paid:
         inv.paid_at = now
+    db.add(StatusChangeLog(
+        entity_type="incoming_invoice",
+        entity_id=inv.id,
+        from_status=from_status,
+        to_status=data.status.value,
+        changed_by_id=current_user.id,
+        changed_at=now,
+        note=data.note,
+    ))
     await db.flush()
     return await _get_invoice_or_404(invoice_id, db)
+
+
+@router.get("/{invoice_id}/status-history")
+async def get_incoming_invoice_status_history(
+    invoice_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    from app.models.status_change_log import StatusChangeLog
+    from app.schemas.status_change_log import StatusChangeLogResponse
+    result = await db.execute(
+        select(StatusChangeLog)
+        .options(selectinload(StatusChangeLog.changed_by))
+        .where(StatusChangeLog.entity_type == "incoming_invoice")
+        .where(StatusChangeLog.entity_id == invoice_id)
+        .order_by(StatusChangeLog.changed_at.asc())
+    )
+    return [StatusChangeLogResponse.model_validate(e) for e in result.scalars().all()]
 
 
 @router.post("/{invoice_id}/upload")
@@ -330,9 +359,20 @@ async def sepa_export(
     )
     db.add(run)
 
+    from app.models.status_change_log import StatusChangeLog
     now = datetime.now(timezone.utc)
     for inv in invoices:
+        from_status = inv.status.value
         inv.status = IncomingInvoiceStatus.scheduled
+        db.add(StatusChangeLog(
+            entity_type="incoming_invoice",
+            entity_id=inv.id,
+            from_status=from_status,
+            to_status=IncomingInvoiceStatus.scheduled.value,
+            changed_by_id=current_user.id,
+            changed_at=now,
+            note="Automatisch durch SEPA-Export",
+        ))
 
     await db.flush()
 

@@ -44,6 +44,7 @@ class IncomingInvoiceUpdate(BaseModel):
 
 class IncomingInvoiceStatusUpdate(BaseModel):
     status: IncomingInvoiceStatus
+    note: Optional[str] = None
 
 
 class CreditorShort(BaseModel):

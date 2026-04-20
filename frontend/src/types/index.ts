@@ -317,6 +317,20 @@ export interface ExpenseReceiptListResponse {
   page_size: number
 }
 
+// ── Statusprotokoll ──────────────────────────────────────────────────────────
+
+export interface StatusChangeLog {
+  id: string
+  entity_type: string
+  entity_id: string
+  from_status: string
+  to_status: string
+  changed_by_id: string
+  changed_by?: { id: string; full_name: string; email: string }
+  changed_at: string
+  note?: string
+}
+
 export interface CompanySettings {
   company_name: string
   company_street: string

@@ -43,6 +43,7 @@ class ExpenseReceiptUpdate(BaseModel):
 
 class ExpenseReceiptStatusUpdate(BaseModel):
     status: ExpenseReceiptStatus
+    note: Optional[str] = None
 
 
 class UserShort(BaseModel):

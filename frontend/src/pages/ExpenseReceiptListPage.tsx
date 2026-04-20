@@ -3,9 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, RotateCcw } from 'lucide-react'
+import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, RotateCcw, ShieldCheck, History } from 'lucide-react'
 import api, { openDocument } from '@/lib/api'
-import type { ExpenseReceipt, ExpenseReceiptListResponse, ExpenseReceiptStatus, User } from '@/types'
+import type { ExpenseReceipt, ExpenseReceiptListResponse, ExpenseReceiptStatus, StatusChangeLog, User } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -78,6 +78,8 @@ function ReceiptTable({
   onReject,
   onUpload,
   onReset,
+  onStatusOverride,
+  onShowHistory,
 }: {
   items: ExpenseReceipt[]
   isLoading: boolean
@@ -87,6 +89,8 @@ function ReceiptTable({
   onReject: (r: ExpenseReceipt) => void
   onUpload: (r: ExpenseReceipt) => void
   onReset: (r: ExpenseReceipt) => void
+  onStatusOverride?: (r: ExpenseReceipt) => void
+  onShowHistory?: (r: ExpenseReceipt) => void
 }) {
   return (
     <div className="border rounded-lg">
@@ -191,6 +195,26 @@ function ReceiptTable({
                         <RotateCcw className="h-4 w-4" />
                       </Button>
                     )}
+                    {isAdmin && onStatusOverride && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Status überschreiben (Admin)"
+                        onClick={() => onStatusOverride(r)}
+                      >
+                        <ShieldCheck className="h-4 w-4 text-slate-400 hover:text-slate-700" />
+                      </Button>
+                    )}
+                    {isAdmin && onShowHistory && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Änderungsprotokoll"
+                        onClick={() => onShowHistory(r)}
+                      >
+                        <History className="h-4 w-4 text-slate-400 hover:text-slate-700" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -213,6 +237,14 @@ export function ExpenseReceiptListPage() {
   const [uploadReceipt, setUploadReceipt] = useState<ExpenseReceipt | null>(null)
   const [pendingSourceFile, setPendingSourceFile] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Admin: Status-Override-Dialog
+  const [overrideTarget, setOverrideTarget] = useState<ExpenseReceipt | null>(null)
+  const [overrideStatus, setOverrideStatus] = useState<string>('')
+  const [overrideNote, setOverrideNote] = useState<string>('')
+
+  // Admin: History-Dialog
+  const [historyTarget, setHistoryTarget] = useState<{ id: string; number: string } | null>(null)
 
   const { data: ownData, isLoading: ownLoading } = useQuery({
     queryKey: ['expense-receipts-own', statusFilter],
@@ -316,13 +348,31 @@ export function ExpenseReceiptListPage() {
   })
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      api.put(`/expense-receipts/${id}/status`, { status }),
+    mutationFn: ({ id, status, note }: { id: string; status: string; note?: string }) =>
+      api.put(`/expense-receipts/${id}/status`, { status, note }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expense-receipts'] })
       toast({ title: 'Status aktualisiert' })
     },
     onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+  })
+
+  const overrideMutation = useMutation({
+    mutationFn: ({ id, status, note }: { id: string; status: string; note?: string }) =>
+      api.put(`/expense-receipts/${id}/status`, { status, note }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expense-receipts'] })
+      setOverrideTarget(null)
+      toast({ title: 'Status geändert und protokolliert' })
+    },
+    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+  })
+
+  const { data: historyData, isLoading: historyLoading } = useQuery({
+    queryKey: ['expense-receipt-history', historyTarget?.id],
+    queryFn: () =>
+      api.get<StatusChangeLog[]>(`/expense-receipts/${historyTarget!.id}/status-history`).then((r) => r.data),
+    enabled: !!historyTarget,
   })
 
   const uploadMutation = useMutation({
@@ -521,6 +571,8 @@ export function ExpenseReceiptListPage() {
               onReject={(r) => statusMutation.mutate({ id: r.id, status: 'rejected' })}
               onUpload={handleUpload}
               onReset={(r) => statusMutation.mutate({ id: r.id, status: 'approved' })}
+              onStatusOverride={(r) => { setOverrideStatus(r.status); setOverrideNote(''); setOverrideTarget(r) }}
+              onShowHistory={(r) => setHistoryTarget({ id: r.id, number: r.receipt_number })}
             />
           </TabsContent>
           <TabsContent value="own" className="mt-4">
@@ -548,6 +600,93 @@ export function ExpenseReceiptListPage() {
           onReset={() => {}}
         />
       )}
+
+      {/* Admin: Status-Override-Dialog */}
+      <Dialog open={!!overrideTarget} onOpenChange={(o) => !o && setOverrideTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Status überschreiben (Admin)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="text-sm text-muted-foreground">
+              Beleg: <span className="font-mono font-medium">{overrideTarget?.receipt_number}</span>
+              {' – '}Aktuell:{' '}
+              <span className="font-medium">{overrideTarget ? STATUS_LABELS[overrideTarget.status] : ''}</span>
+            </div>
+            <div className="space-y-2">
+              <Label>Neuer Status</Label>
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                value={overrideStatus}
+                onChange={(e) => setOverrideStatus(e.target.value)}
+              >
+                {Object.entries(STATUS_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Begründung <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                value={overrideNote}
+                onChange={(e) => setOverrideNote(e.target.value)}
+                placeholder="z.B. Fehler korrigiert…"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverrideTarget(null)}>Abbrechen</Button>
+            <Button
+              onClick={() => overrideTarget && overrideMutation.mutate({
+                id: overrideTarget.id,
+                status: overrideStatus,
+                note: overrideNote || undefined,
+              })}
+              disabled={overrideMutation.isPending || !overrideStatus || overrideStatus === overrideTarget?.status}
+            >
+              {overrideMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin: Statusprotokoll-Dialog */}
+      <Dialog open={!!historyTarget} onOpenChange={(o) => !o && setHistoryTarget(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Statusprotokoll – <span className="font-mono">{historyTarget?.number}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-2 max-h-96 overflow-y-auto">
+            {historyLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !historyData || historyData.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">Keine Statusänderungen protokolliert.</p>
+            ) : (
+              historyData.map((h) => (
+                <div key={h.id} className="flex items-start gap-3 text-sm border rounded-md px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <div>
+                      <span className="font-medium">{STATUS_LABELS[h.from_status as ExpenseReceiptStatus] ?? h.from_status}</span>
+                      <span className="mx-2 text-muted-foreground">→</span>
+                      <span className="font-medium">{STATUS_LABELS[h.to_status as ExpenseReceiptStatus] ?? h.to_status}</span>
+                    </div>
+                    {h.note && <p className="text-xs text-muted-foreground mt-0.5 truncate">{h.note}</p>}
+                  </div>
+                  <div className="text-xs text-muted-foreground shrink-0 text-right">
+                    <div>{h.changed_by?.full_name ?? '–'}</div>
+                    <div>{new Date(h.changed_at).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Hidden file input */}
       <input

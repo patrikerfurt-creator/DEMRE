@@ -242,7 +242,9 @@ async def update_expense_receipt_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    from app.models.status_change_log import StatusChangeLog
     receipt = await _get_receipt_or_404(receipt_id, db)
+    from_status = receipt.status.value
     receipt.status = data.status
     now = datetime.now(timezone.utc)
     if data.status == ExpenseReceiptStatus.approved:
@@ -250,8 +252,35 @@ async def update_expense_receipt_status(
         receipt.approved_at = now
     elif data.status == ExpenseReceiptStatus.paid:
         receipt.paid_at = now
+    db.add(StatusChangeLog(
+        entity_type="expense_receipt",
+        entity_id=receipt.id,
+        from_status=from_status,
+        to_status=data.status.value,
+        changed_by_id=current_user.id,
+        changed_at=now,
+        note=data.note,
+    ))
     await db.flush()
     return await _get_receipt_or_404(receipt_id, db)
+
+
+@router.get("/{receipt_id}/status-history")
+async def get_expense_receipt_status_history(
+    receipt_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    from app.models.status_change_log import StatusChangeLog
+    from app.schemas.status_change_log import StatusChangeLogResponse
+    result = await db.execute(
+        select(StatusChangeLog)
+        .options(selectinload(StatusChangeLog.changed_by))
+        .where(StatusChangeLog.entity_type == "expense_receipt")
+        .where(StatusChangeLog.entity_id == receipt_id)
+        .order_by(StatusChangeLog.changed_at.asc())
+    )
+    return [StatusChangeLogResponse.model_validate(e) for e in result.scalars().all()]
 
 
 @router.post("/{receipt_id}/upload")
@@ -333,10 +362,21 @@ async def sepa_export(
     )
     db.add(run)
 
+    from app.models.status_change_log import StatusChangeLog
     now = datetime.now(timezone.utc)
     for receipt in receipts:
+        from_status = receipt.status.value
         receipt.status = ExpenseReceiptStatus.paid
         receipt.paid_at = now
+        db.add(StatusChangeLog(
+            entity_type="expense_receipt",
+            entity_id=receipt.id,
+            from_status=from_status,
+            to_status=ExpenseReceiptStatus.paid.value,
+            changed_by_id=current_user.id,
+            changed_at=now,
+            note="Automatisch durch SEPA-Export",
+        ))
 
     await db.flush()
 
