@@ -13,6 +13,9 @@ from sqlalchemy import select
 async def main():
     from app.config import settings
     from app.database import AsyncSessionLocal
+    # Alle Modelle importieren damit SQLAlchemy Beziehungen auflösen kann
+    import app.models.creditor  # noqa: F401
+    import app.models.user      # noqa: F401
     from app.models.incoming_invoice import IncomingInvoice, IncomingInvoiceStatus
     from app.models.expense_receipt import ExpenseReceipt, ExpenseReceiptStatus
 
