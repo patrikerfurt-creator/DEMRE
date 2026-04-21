@@ -3,10 +3,17 @@
   "sftp_port": 22,
   "sftp_user": "patrik",
   "sftp_key_file": "C:\\Users\\maurer\\.ssh\\strato_server_key",
+
   "remote_incoming_invoices_dir": "/opt/DEMRE/Eingangsrechnungen",
-  "remote_expense_receipts_dir": "/opt/DEMRE/Belege",
+  "remote_expense_receipts_dir":  "/opt/DEMRE/Belege",
   "remote_outgoing_invoices_dir": "/opt/DEMRE/storage/invoices/outgoing_export",
+  "remote_stb_export_dir":        "/opt/DEMRE/storage/exports/steuerberater",
+
   "local_incoming_invoices_folder": "\\\\192.168.161.11\\daten\\1-Scan\\DEM_ER",
-  "local_expense_receipts_folder": "\\\\192.168.161.11\\daten\\1-Scan\\DEM_BL",
-  "local_outgoing_invoices_folder": "\\\\192.168.161.11\\daten\\1-Scan\\DEM_AR"
+  "local_expense_receipts_folder":  "\\\\192.168.161.11\\daten\\1-Scan\\DEM_BL",
+  "local_outgoing_invoices_folder": [
+    "\\\\192.168.161.11\\daten\\1-Scan\\DEM_AR",
+    "\\\\192.168.161.11\\daten\\1-DOPRE"
+  ],
+  "local_stb_folder": "\\\\192.168.161.11\\daten\\Patrik_Maurer\\Demme Intern\\Buchhaltung STB\\15444-40005\\Rechnungseingang"
 }

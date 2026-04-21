@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, RotateCcw, ShieldCheck, History } from 'lucide-react'
+import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, RotateCcw, ShieldCheck, History, Download } from 'lucide-react'
 import api, { openDocument } from '@/lib/api'
 import type { ExpenseReceipt, ExpenseReceiptListResponse, ExpenseReceiptStatus, StatusChangeLog, User } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -277,6 +277,29 @@ export function ExpenseReceiptListPage() {
   })
   const users = usersData ?? []
 
+  const { data: stbCount, refetch: refetchStbCount } = useQuery({
+    queryKey: ['stb-export-count'],
+    queryFn: () => api.get<{ count: number }>('/stb-export/count').then((r) => r.data.count),
+    enabled: isAdmin,
+    refetchInterval: 30000,
+  })
+
+  async function downloadStbExport() {
+    try {
+      const res = await api.get('/stb-export/download', { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `STB_Export_${new Date().toISOString().slice(0, 10)}.zip`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+      refetchStbCount()
+      toast({ title: 'STB Export heruntergeladen' })
+    } catch {
+      toast({ title: 'Keine Dateien im STB-Export oder Fehler', variant: 'destructive' })
+    }
+  }
+
   const { register, handleSubmit, reset, watch, setValue } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
@@ -464,9 +487,22 @@ export function ExpenseReceiptListPage() {
           <h1 className="text-2xl font-bold text-slate-900">Belege</h1>
           <p className="text-sm text-slate-500 mt-1">Ausgaben und Erstattungen</p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" /> Beleg einreichen
-        </Button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <Button
+              variant="outline"
+              onClick={downloadStbExport}
+              disabled={!stbCount}
+              title="Genehmigte Belege/Rechnungen als ZIP herunterladen"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              STB Export{stbCount ? ` (${stbCount})` : ''}
+            </Button>
+          )}
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" /> Beleg einreichen
+          </Button>
+        </div>
       </div>
 
       {/* Pending-Panel: Belege aus dem Ordner */}

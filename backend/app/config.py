@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     incoming_invoices_watch_dir: str = "/app/incoming_invoices"
     expense_receipts_watch_dir: str = "/app/expense_receipts"
 
+    # STB-Export: genehmigte Belege/Rechnungen werden hierhin kopiert (leer = deaktiviert)
+    stb_export_dir: str = ""
+
     # KI-Rechnungsextraktion
     anthropic_api_key: Optional[str] = None
 

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, Banknote, ShieldCheck, History } from 'lucide-react'
+import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, Banknote, ShieldCheck, History, Download } from 'lucide-react'
 import api, { openDocument } from '@/lib/api'
 import type { IncomingInvoice, IncomingInvoiceListResponse, Creditor, CreditorListResponse, IncomingInvoiceStatus, StatusChangeLog } from '@/types'
 import { useAuthStore } from '@/store/authStore'
@@ -72,6 +72,7 @@ export function IncomingInvoiceListPage() {
   const [uploadInvoice, setUploadInvoice] = useState<IncomingInvoice | null>(null)
   const [pendingSourceFile, setPendingSourceFile] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const pendingUploadRef = useRef<HTMLInputElement>(null)
 
   // Admin: Status-Override-Dialog
   const [overrideTarget, setOverrideTarget] = useState<IncomingInvoice | null>(null)
@@ -101,6 +102,29 @@ export function IncomingInvoiceListPage() {
     queryFn: () => api.get<{ files: PendingFile[] }>('/incoming-invoices/pending').then((r) => r.data),
   })
   const pendingFiles = pendingData?.files ?? []
+
+  const { data: stbCount, refetch: refetchStbCount } = useQuery({
+    queryKey: ['stb-export-count'],
+    queryFn: () => api.get<{ count: number }>('/stb-export/count').then((r) => r.data.count),
+    enabled: isAdmin,
+    refetchInterval: 30000,
+  })
+
+  async function downloadStbExport() {
+    try {
+      const res = await api.get('/stb-export/download', { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `STB_Export_${new Date().toISOString().slice(0, 10)}.zip`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+      refetchStbCount()
+      toast({ title: 'STB Export heruntergeladen' })
+    } catch {
+      toast({ title: 'Keine Dateien im STB-Export oder Fehler', variant: 'destructive' })
+    }
+  }
 
   const { register, handleSubmit, reset, setValue, watch } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -167,6 +191,22 @@ export function IncomingInvoiceListPage() {
       queryClient.invalidateQueries({ queryKey: ['incoming-invoices'] })
       setUploadInvoice(null)
       toast({ title: 'Dokument hochgeladen' })
+    },
+    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+  })
+
+  const pendingUploadMutation = useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      return api.post('/incoming-invoices/pending/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incoming-invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['incoming-invoices-pending'] })
+      toast({ title: 'Rechnung hochgeladen', description: 'Die KI-Extraktion läuft im Hintergrund.' })
     },
     onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
   })
@@ -265,9 +305,15 @@ export function IncomingInvoiceListPage() {
           <h1 className="text-2xl font-bold text-slate-900">Eingangsrechnungen</h1>
           <p className="text-sm text-slate-500 mt-1">{total} Einträge</p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" /> Neue Eingangsrechnung
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => pendingUploadRef.current?.click()} disabled={pendingUploadMutation.isPending}>
+            {pendingUploadMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+            Rechnung hochladen
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" /> Neue Eingangsrechnung
+          </Button>
+        </div>
       </div>
 
       {/* Pending-Panel: Dateien aus dem Eingangsordner */}
@@ -350,7 +396,7 @@ export function IncomingInvoiceListPage() {
         </div>
       )}
 
-      <div className="flex gap-2 items-center">
+      <div className="flex gap-2 items-center justify-between">
         <select
           className="border rounded-md px-3 py-2 text-sm bg-background"
           value={statusFilter}
@@ -361,6 +407,18 @@ export function IncomingInvoiceListPage() {
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadStbExport}
+            disabled={!stbCount}
+            title="Genehmigte Belege/Rechnungen als ZIP herunterladen"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            STB Export{stbCount ? ` (${stbCount})` : ''}
+          </Button>
+        )}
       </div>
 
       <div className="border rounded-lg">
@@ -507,7 +565,7 @@ export function IncomingInvoiceListPage() {
         </div>
       )}
 
-      {/* Hidden file input for upload */}
+      {/* Hidden file input for document upload to existing invoice */}
       <input
         ref={fileRef}
         type="file"
@@ -518,6 +576,18 @@ export function IncomingInvoiceListPage() {
           if (file && uploadInvoice) {
             uploadMutation.mutate({ id: uploadInvoice.id, file })
           }
+          e.target.value = ''
+        }}
+      />
+      {/* Hidden file input for uploading a new invoice to pending/staging */}
+      <input
+        ref={pendingUploadRef}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) pendingUploadMutation.mutate(file)
           e.target.value = ''
         }}
       />

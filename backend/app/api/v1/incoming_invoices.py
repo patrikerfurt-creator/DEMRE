@@ -25,6 +25,19 @@ router = APIRouter(prefix="/incoming-invoices", tags=["incoming-invoices"])
 UPLOAD_DIR = os.path.join(settings.storage_path, "uploads", "incoming-invoices")
 
 
+def _copy_to_stb_export(document_path: str | None) -> None:
+    """Kopiert die Datei in den STB-Export-Ordner, falls konfiguriert und Datei vorhanden."""
+    export_dir = settings.stb_export_dir
+    if not export_dir or not document_path or not os.path.isfile(document_path):
+        return
+    try:
+        os.makedirs(export_dir, exist_ok=True)
+        shutil.copy2(document_path, os.path.join(export_dir, os.path.basename(document_path)))
+    except Exception as exc:
+        import structlog
+        structlog.get_logger().warning("stb_export.copy_failed", path=document_path, error=str(exc))
+
+
 def _upload_dir() -> str:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     return UPLOAD_DIR
@@ -217,6 +230,34 @@ async def delete_pending_file(
             os.remove(path)
 
 
+@router.post("/pending/upload", status_code=status.HTTP_202_ACCEPTED,
+             summary="Rechnung direkt hochladen (ohne Ordner-Watcher)")
+async def upload_to_pending(
+    file: UploadFile = File(...),
+    _: User = Depends(require_not_readonly),
+):
+    """Nimmt eine Datei entgegen, legt sie ins Staging und startet sofort die KI-Extraktion."""
+    from app.scheduler.jobs.incoming_invoices_watcher import _process_file, get_staging_dir
+
+    allowed = {".pdf", ".jpg", ".jpeg", ".png"}
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail="Nur PDF, JPG oder PNG erlaubt")
+
+    staging_dir = get_staging_dir(settings.storage_path)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    original_stem = os.path.splitext(os.path.basename(file.filename or "upload"))[0]
+    staged_name = f"{ts}_{original_stem}{ext}"
+    staged_path = os.path.join(staging_dir, staged_name)
+
+    content = await file.read()
+    with open(staged_path, "wb") as f:
+        f.write(content)
+
+    await _process_file(staged_path, file.filename or staged_name, settings.storage_path)
+    return {"filename": staged_name}
+
+
 @router.get("/{invoice_id}", response_model=IncomingInvoiceResponse)
 async def get_incoming_invoice(
     invoice_id: str,
@@ -255,6 +296,7 @@ async def update_incoming_invoice_status(
     if data.status == IncomingInvoiceStatus.approved:
         inv.approved_by = current_user.id
         inv.approved_at = now
+        _copy_to_stb_export(inv.document_path)
     elif data.status == IncomingInvoiceStatus.paid:
         inv.paid_at = now
     db.add(StatusChangeLog(

@@ -23,6 +23,19 @@ router = APIRouter(prefix="/expense-receipts", tags=["expense-receipts"])
 UPLOAD_DIR = os.path.join(settings.storage_path, "uploads", "expense-receipts")
 
 
+def _copy_to_stb_export(document_path: str | None) -> None:
+    """Kopiert die Datei in den STB-Export-Ordner, falls konfiguriert und Datei vorhanden."""
+    export_dir = settings.stb_export_dir
+    if not export_dir or not document_path or not os.path.isfile(document_path):
+        return
+    try:
+        os.makedirs(export_dir, exist_ok=True)
+        shutil.copy2(document_path, os.path.join(export_dir, os.path.basename(document_path)))
+    except Exception as exc:
+        import structlog
+        structlog.get_logger().warning("stb_export.copy_failed", path=document_path, error=str(exc))
+
+
 def _upload_dir() -> str:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     return UPLOAD_DIR
@@ -250,6 +263,7 @@ async def update_expense_receipt_status(
     if data.status == ExpenseReceiptStatus.approved:
         receipt.approved_by = current_user.id
         receipt.approved_at = now
+        _copy_to_stb_export(receipt.document_path)
     elif data.status == ExpenseReceiptStatus.paid:
         receipt.paid_at = now
     db.add(StatusChangeLog(

@@ -22,6 +22,8 @@ services:
     env_file:
       - ./backend/.env
       - ./.env
+    environment:
+      STB_EXPORT_DIR: /app/storage/exports/steuerberater
     volumes:
       - ./backend:/app
       - ./storage:/app/storage

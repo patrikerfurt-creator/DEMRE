@@ -19,6 +19,8 @@ services:
         condition: service_healthy
     env_file:
       - ./.env.prod
+    environment:
+      STB_EXPORT_DIR: /app/storage/exports/steuerberater
     volumes:
       - ./storage:/app/storage
       - ./Eingangsrechnungen:/app/incoming_invoices
