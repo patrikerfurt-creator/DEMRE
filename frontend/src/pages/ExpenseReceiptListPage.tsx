@@ -162,7 +162,7 @@ function ReceiptTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    {r.status === 'submitted' && (
+                    {(r.status === 'submitted' || (isAdmin && r.status === 'approved')) && (
                       <Button variant="ghost" size="icon" onClick={() => onEdit(r)} title="Bearbeiten">
                         <Pencil className="h-4 w-4" />
                       </Button>
