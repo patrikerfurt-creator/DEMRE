@@ -76,7 +76,7 @@ def _load_receipt_sidecar(staging_dir: str, doc_filename: str) -> dict:
 
 @router.get("/pending", summary="Staging-Belege aus dem Eingangsordner auflisten")
 async def list_pending_receipts(
-    _: User = Depends(require_admin),
+    _: User = Depends(require_not_readonly),
 ):
     staging_dir = _receipt_staging_dir()
     files = []
@@ -101,7 +101,7 @@ async def list_pending_receipts(
 @router.post("/pending/{filename}/extract", summary="Belegdaten (erneut) per KI extrahieren")
 async def extract_pending_receipt(
     filename: str,
-    _: User = Depends(require_admin),
+    _: User = Depends(require_not_readonly),
 ):
     from app.services.invoice_extractor import extract_receipt_data
 
@@ -127,7 +127,7 @@ async def extract_pending_receipt(
 @router.get("/pending/{filename}/download", summary="Staging-Beleg herunterladen / Vorschau")
 async def download_pending_receipt(
     filename: str,
-    _: User = Depends(require_admin),
+    _: User = Depends(require_not_readonly),
 ):
     staging_dir = _receipt_staging_dir()
     filepath = os.path.join(staging_dir, os.path.basename(filename))
@@ -195,6 +195,18 @@ async def create_expense_receipt(
         submitted_by=submitted_by,
         **receipt_data,
     )
+
+    # IBAN aus dem Mitarbeiterstamm übernehmen, wenn nicht im Request angegeben
+    if not receipt.reimbursement_iban:
+        if submitted_by == current_user.id:
+            submitter = current_user
+        else:
+            res = await db.execute(select(User).where(User.id == submitted_by))
+            submitter = res.scalar_one_or_none()
+        if submitter and submitter.iban:
+            receipt.reimbursement_iban = submitter.iban
+            if not receipt.reimbursement_account_holder:
+                receipt.reimbursement_account_holder = submitter.full_name
 
     # Staging-Datei verschieben, falls angegeben
     if data.source_pending_file:
