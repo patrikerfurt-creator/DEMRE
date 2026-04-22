@@ -97,7 +97,9 @@ def wait_for_stable(path: Path, stable_secs: float = 2.0, timeout: float = 30.0)
         try:
             size = path.stat().st_size
         except OSError:
-            return False
+            # Datei kurzzeitig nicht erreichbar (Netzlaufwerk, Schreibsperre) — weiter warten
+            time.sleep(0.5)
+            continue
 
         if size > 0 and size == prev_size:
             if stable_since is None:
@@ -115,12 +117,32 @@ def wait_for_stable(path: Path, stable_secs: float = 2.0, timeout: float = 30.0)
 
 # ── Watchdog-Handler ──────────────────────────────────────────────────────────
 class FolderHandler(FileSystemEventHandler):
-    def __init__(self, config: dict, remote_dir: str, archive_root: Path):
+    def __init__(self, config: dict, remote_dir: str, archive_root: Path, watch_dir: Path):
         self.config       = config
         self.remote_dir   = remote_dir
         self.archive_root = archive_root
+        self.watch_dir    = watch_dir
         self._active: set = set()
         self._lock        = threading.Lock()
+
+    def scan_existing(self):
+        """Beim Dienststart bereits vorhandene Dateien hochladen."""
+        for path in self.watch_dir.iterdir():
+            if path.is_dir():
+                continue
+            if path.suffix.lower() not in SUPPORTED_EXT:
+                continue
+            try:
+                path.relative_to(self.archive_root)
+                continue  # Archiv-Unterordner überspringen
+            except ValueError:
+                pass
+            with self._lock:
+                if str(path) in self._active:
+                    continue
+                self._active.add(str(path))
+            logging.info(f"Vorhandene Datei beim Start gefunden: {path.name}")
+            threading.Thread(target=self._process, args=(path,), daemon=True).start()
 
     def on_created(self, event):
         if event.is_directory:
@@ -360,17 +382,21 @@ class DemreUploaderService(win32serviceutil.ServiceFramework):
 
         # Watchdog für Uploads
         self.observer = Observer()
-        self.observer.schedule(
-            FolderHandler(config, config["remote_incoming_invoices_dir"], incoming_dir / "Hochgeladen"),
-            str(incoming_dir),
-            recursive=False,
+        handler_incoming = FolderHandler(
+            config, config["remote_incoming_invoices_dir"],
+            incoming_dir / "Hochgeladen", incoming_dir,
         )
-        self.observer.schedule(
-            FolderHandler(config, config["remote_expense_receipts_dir"], receipts_dir / "Hochgeladen"),
-            str(receipts_dir),
-            recursive=False,
+        handler_receipts = FolderHandler(
+            config, config["remote_expense_receipts_dir"],
+            receipts_dir / "Hochgeladen", receipts_dir,
         )
+        self.observer.schedule(handler_incoming, str(incoming_dir), recursive=False)
+        self.observer.schedule(handler_receipts, str(receipts_dir), recursive=False)
         self.observer.start()
+
+        # Beim Start bereits vorhandene Dateien hochladen
+        handler_incoming.scan_existing()
+        handler_receipts.scan_existing()
         logging.info(f"Überwache Eingangsrechnungen : {incoming_dir}")
         logging.info(f"Überwache Belege             : {receipts_dir}")
         logging.info(f"SFTP-Ziel                    : {config['sftp_host']}")

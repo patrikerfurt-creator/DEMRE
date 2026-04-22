@@ -131,6 +131,13 @@ export function IncomingInvoiceListPage() {
   })
   const isDirectDebit = watch('is_direct_debit', false)
 
+  function formatApiError(err: any): string {
+    const detail = err?.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) return detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ')
+    return 'Unbekannter Fehler'
+  }
+
   const createMutation = useMutation({
     mutationFn: (data: FormData) => api.post('/incoming-invoices', data),
     onSuccess: () => {
@@ -138,17 +145,17 @@ export function IncomingInvoiceListPage() {
       setDialogOpen(false)
       toast({ title: 'Eingangsrechnung angelegt' })
     },
-    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' }),
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: FormData }) => api.put(`/incoming-invoices/${id}`, data),
+    mutationFn: ({ id, data }: { id: string; data: any }) => api.put(`/incoming-invoices/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incoming-invoices'] })
       setDialogOpen(false)
       toast({ title: 'Eingangsrechnung aktualisiert' })
     },
-    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' }),
   })
 
   const statusMutation = useMutation({
@@ -158,7 +165,7 @@ export function IncomingInvoiceListPage() {
       queryClient.invalidateQueries({ queryKey: ['incoming-invoices'] })
       toast({ title: 'Status aktualisiert' })
     },
-    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' }),
   })
 
   const overrideMutation = useMutation({
@@ -169,7 +176,7 @@ export function IncomingInvoiceListPage() {
       setOverrideTarget(null)
       toast({ title: 'Status geändert und protokolliert' })
     },
-    onError: (err: any) => toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' }),
   })
 
   const { data: historyData, isLoading: historyLoading } = useQuery({
@@ -280,7 +287,12 @@ export function IncomingInvoiceListPage() {
     setDialogOpen(true)
   }
 
-  function onSubmit(data: FormData) {
+  function onSubmit(rawData: FormData) {
+    // Leere Datumsstrings entfernen — Backend (Pydantic) kann "" nicht als date parsen
+    const data: any = { ...rawData }
+    if (!data.receipt_date) delete data.receipt_date
+    if (!data.due_date) delete data.due_date
+
     if (editing) {
       updateMutation.mutate({ id: editing.id, data })
     } else {
@@ -681,7 +693,12 @@ export function IncomingInvoiceListPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogContent
+          className="max-w-2xl max-h-[90vh] overflow-hidden"
+          style={{ display: 'flex', flexDirection: 'column' }}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader className="shrink-0">
             <DialogTitle>
               {editing ? 'Eingangsrechnung bearbeiten' : pendingSourceFile ? 'Rechnung aus Eingangsordner übernehmen' : 'Neue Eingangsrechnung'}
