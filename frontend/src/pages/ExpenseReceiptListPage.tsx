@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, CreditCard, RotateCcw, ShieldCheck, History, Download } from 'lucide-react'
+import { Plus, Upload, Pencil, CheckCircle, XCircle, Loader2, Eye, Trash2, RefreshCw, RotateCcw, ShieldCheck, History, Download } from 'lucide-react'
 import api, { openDocument } from '@/lib/api'
 import type { ExpenseReceipt, ExpenseReceiptListResponse, ExpenseReceiptStatus, StatusChangeLog, User } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -134,14 +134,7 @@ function ReceiptTable({
                 <TableCell className="text-sm">{r.merchant || '–'}</TableCell>
                 <TableCell className="text-sm">{r.category || '–'}</TableCell>
                 <TableCell className="text-right font-medium">
-                  <div className="flex items-center justify-end gap-1.5">
-                    {formatCurrency(r.amount_gross)}
-                    {r.payment_method === 'Kreditkarte' && (
-                      <span title="Kreditkarte – keine Überweisung">
-                        <CreditCard className="h-3.5 w-3.5 text-amber-500" />
-                      </span>
-                    )}
-                  </div>
+                  {formatCurrency(r.amount_gross)}
                 </TableCell>
                 <TableCell>
                   <Badge variant={STATUS_VARIANTS[r.status]}>
@@ -303,21 +296,11 @@ export function ExpenseReceiptListPage() {
     resolver: zodResolver(schema),
   })
 
-  const watchedPaymentMethod = watch('payment_method')
-  const isKreditkarte = watchedPaymentMethod === 'Kreditkarte'
   const watchedSubmittedById = watch('submitted_by_id')
-
-  // IBAN leeren wenn Kreditkarte gewählt wird
-  useEffect(() => {
-    if (isKreditkarte) {
-      setValue('reimbursement_iban', '')
-      setValue('reimbursement_account_holder', '')
-    }
-  }, [isKreditkarte])
 
   function handleEmployeeChange(userId: string) {
     setValue('submitted_by_id', userId)
-    if (!userId || isKreditkarte) return
+    if (!userId) return
     const selectedUser = users.find((u) => u.id === userId)
     if (selectedUser?.iban) {
       setValue('reimbursement_iban', selectedUser.iban)
@@ -832,31 +815,19 @@ export function ExpenseReceiptListPage() {
             </div>
 
             <div className="border-t pt-4">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="mb-3">
                 <span className="text-sm font-semibold text-slate-700">Bankverbindung für Erstattung</span>
-                {isKreditkarte && (
-                  <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                    <CreditCard className="h-3 w-3" />
-                    Kreditkarte – keine Überweisung
-                  </span>
-                )}
               </div>
-              {isKreditkarte ? (
-                <p className="text-sm text-slate-500 bg-slate-50 border rounded-md px-3 py-2">
-                  Bei Kreditkartenzahlungen erfolgt keine Erstattung per Überweisung. Dieser Beleg wird beim SEPA-Export nicht berücksichtigt.
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 space-y-2">
-                    <Label>IBAN</Label>
-                    <Input {...register('reimbursement_iban')} placeholder="DE..." className="font-mono" />
-                  </div>
-                  <div className="col-span-2 space-y-2">
-                    <Label>Kontoinhaber</Label>
-                    <Input {...register('reimbursement_account_holder')} />
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 space-y-2">
+                  <Label>IBAN</Label>
+                  <Input {...register('reimbursement_iban')} placeholder="DE..." className="font-mono" />
                 </div>
-              )}
+                <div className="col-span-2 space-y-2">
+                  <Label>Kontoinhaber</Label>
+                  <Input {...register('reimbursement_account_holder')} />
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">

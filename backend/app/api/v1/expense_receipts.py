@@ -360,7 +360,8 @@ async def sepa_export(
         select(ExpenseReceipt)
         .options(selectinload(ExpenseReceipt.submitter))
         .where(ExpenseReceipt.status == ExpenseReceiptStatus.approved)
-        .where(ExpenseReceipt.payment_method != 'Kreditkarte')
+        .where(ExpenseReceipt.reimbursement_iban.isnot(None))
+        .where(ExpenseReceipt.reimbursement_iban != '')
     )
     receipts = result.scalars().all()
 
