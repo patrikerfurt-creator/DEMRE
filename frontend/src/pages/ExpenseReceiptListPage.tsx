@@ -758,8 +758,8 @@ export function ExpenseReceiptListPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto pr-1 space-y-4">
-            {/* Eingereicht von: nur bei Pending-Übernahme durch Admin */}
-            {pendingSourceFile && isAdmin && (
+            {/* Eingereicht von: beim Anlegen (manuell + Pending) für Admins */}
+            {!editing && isAdmin && (
               <div className="space-y-2 rounded-md border px-3 py-2 bg-slate-50">
                 <Label>Eingereicht von</Label>
                 <select
