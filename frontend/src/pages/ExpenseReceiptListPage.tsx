@@ -758,20 +758,26 @@ export function ExpenseReceiptListPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto pr-1 space-y-4">
-            {/* Eingereicht von: beim Anlegen (manuell + Pending) für Admins */}
-            {!editing && isAdmin && (
+            {/* Eingereicht von: beim Anlegen für alle sichtbar */}
+            {!editing && (
               <div className="space-y-2 rounded-md border px-3 py-2 bg-slate-50">
                 <Label>Eingereicht von</Label>
-                <select
-                  className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-                  value={watchedSubmittedById || ''}
-                  onChange={(e) => handleEmployeeChange(e.target.value)}
-                >
-                  <option value="">– Mich selbst (Admin) –</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
-                  ))}
-                </select>
+                {isAdmin ? (
+                  <select
+                    className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                    value={watchedSubmittedById || ''}
+                    onChange={(e) => handleEmployeeChange(e.target.value)}
+                  >
+                    <option value="">– Mich selbst (Admin) –</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="px-3 py-2 text-sm border rounded-md bg-white text-slate-700">
+                    {user?.full_name}
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Die IBAN wird automatisch aus dem Mitarbeiterstamm übernommen.
                 </p>
