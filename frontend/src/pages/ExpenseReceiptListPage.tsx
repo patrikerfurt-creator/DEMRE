@@ -266,7 +266,6 @@ export function ExpenseReceiptListPage() {
   const { data: pendingData, refetch: refetchPending } = useQuery({
     queryKey: ['expense-receipts-pending'],
     queryFn: () => api.get<{ files: PendingReceipt[] }>('/expense-receipts/pending').then((r) => r.data),
-    enabled: isAdmin,
   })
   const pendingFiles = pendingData?.files ?? []
 
@@ -417,7 +416,12 @@ export function ExpenseReceiptListPage() {
   function openCreate() {
     setEditing(null)
     setPendingSourceFile(null)
-    reset({ receipt_date: new Date().toISOString().slice(0, 10), vat_rate: 19 })
+    reset({
+      receipt_date: new Date().toISOString().slice(0, 10),
+      vat_rate: 19,
+      reimbursement_iban: user?.iban ?? '',
+      reimbursement_account_holder: user?.iban ? (user.full_name ?? '') : '',
+    })
     setDialogOpen(true)
   }
 
@@ -455,8 +459,8 @@ export function ExpenseReceiptListPage() {
       category: d.category ?? '',
       description: d.description ?? '',
       payment_method: d.payment_method ?? '',
-      reimbursement_iban: '',
-      reimbursement_account_holder: '',
+      reimbursement_iban: user?.iban ?? '',
+      reimbursement_account_holder: user?.iban ? (user.full_name ?? '') : '',
       notes: '',
       submitted_by_id: user?.id ?? '',
     })
@@ -506,7 +510,7 @@ export function ExpenseReceiptListPage() {
       </div>
 
       {/* Pending-Panel: Belege aus dem Ordner */}
-      {isAdmin && pendingFiles.length > 0 && (
+      {pendingFiles.length > 0 && (
         <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="font-semibold text-amber-900 text-sm">
@@ -562,15 +566,17 @@ export function ExpenseReceiptListPage() {
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title="Löschen"
-                    onClick={() => deletePendingMutation.mutate(pf.filename)}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Löschen"
+                      onClick={() => deletePendingMutation.mutate(pf.filename)}
+                      className="text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
