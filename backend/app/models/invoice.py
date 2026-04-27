@@ -76,6 +76,7 @@ class InvoiceItem(Base):
     )
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
+    additional_text: Mapped[Optional[str]] = mapped_column(Text)
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
     unit: Mapped[Optional[str]] = mapped_column(String(50))
     unit_price_net: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)

@@ -508,21 +508,21 @@ export function InvoiceCreatePage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium text-slate-600 w-40">Artikel</th>
-                  <th className="px-3 py-2 text-left font-medium text-slate-600">Beschreibung *</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-20">Menge</th>
-                  <th className="px-3 py-2 text-left font-medium text-slate-600 w-36">Einheit</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-28">Preis (Netto)</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-20">MwSt. %</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-28">Gesamt (Brutto)</th>
-                  <th className="px-3 py-2 w-10"></th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-600 w-40 align-top">Artikel</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-600 align-top">Beschreibung *</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-20 align-top">Menge</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-600 w-36 align-top">Einheit</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-28 align-top">Preis (Netto)</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-20 align-top">MwSt. %</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600 w-28 align-top">Gesamt (Brutto)</th>
+                  <th className="px-3 py-2 w-10 align-top"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {items.map((item) => {
                   const { gross } = calcItem(item)
                   return (
-                    <tr key={item._key} className="hover:bg-slate-50/50">
+                    <tr key={item._key} className="hover:bg-slate-50/50 align-top">
                       <td className="px-3 py-2">
                         <button
                           type="button"
@@ -539,11 +539,12 @@ export function InvoiceCreatePage() {
                         </button>
                       </td>
                       <td className="px-3 py-2">
-                        <Input
-                          className="h-8 text-sm"
+                        <textarea
+                          className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                           placeholder="Beschreibung..."
                           value={item.description}
                           onChange={(e) => updateItem(item._key, 'description', e.target.value)}
+                          rows={3}
                         />
                       </td>
                       <td className="px-3 py-2">

@@ -160,7 +160,7 @@ class InvoiceService:
         generated_by: Optional[UUID] = None,
         generation_run_id: Optional[UUID] = None,
     ) -> UUID:
-        price, vat_rate, description, unit = self.get_effective_price(contract_item)
+        price, vat_rate, description, unit, additional_text = self.get_effective_price(contract_item)
         quantity = contract_item.quantity
 
         # Annual items: use 01.01.–31.12. as service period and append to description
@@ -204,6 +204,7 @@ class InvoiceService:
             article_id=contract_item.article_id,
             position=1,
             description=description,
+            additional_text=additional_text,
             quantity=quantity,
             unit=unit,
             unit_price_net=price,
@@ -219,7 +220,7 @@ class InvoiceService:
 
     def get_effective_price(
         self, contract_item: ContractItem
-    ) -> tuple[Decimal, Decimal, str, Optional[str]]:
+    ) -> tuple[Decimal, Decimal, str, Optional[str], Optional[str]]:
         article = contract_item.article
 
         if contract_item.override_price is not None:
@@ -244,5 +245,6 @@ class InvoiceService:
             description = "Leistung"
 
         unit = article.unit if article else None
+        additional_text = article.description if article else None
 
-        return price, vat_rate, description, unit
+        return price, vat_rate, description, unit, additional_text

@@ -10,6 +10,7 @@ class InvoiceItemBase(BaseModel):
     article_id: Optional[UUID] = None
     position: int = 1
     description: str
+    additional_text: Optional[str] = None
     quantity: Decimal
     unit: Optional[str] = None
     unit_price_net: Decimal

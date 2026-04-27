@@ -138,6 +138,7 @@ export interface InvoiceItem {
   article_id?: string
   position: number
   description: string
+  additional_text?: string
   quantity: string
   unit?: string
   unit_price_net: string

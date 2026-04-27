@@ -18,6 +18,7 @@ const STATUS_OPTIONS: InvoiceStatus[] = ['draft', 'issued', 'sent', 'paid', 'ove
 
 const EMPTY_ITEM_FORM = {
   description: '',
+  additional_text: '',
   quantity: '1',
   unit: '',
   unit_price_net: '',
@@ -103,6 +104,7 @@ export function InvoiceDetailPage() {
     setEditingItem(item)
     setItemForm({
       description: item.description,
+      additional_text: item.additional_text || '',
       quantity: String(parseFloat(item.quantity)),
       unit: item.unit || '',
       unit_price_net: String(parseFloat(item.unit_price_net)),
@@ -130,6 +132,7 @@ export function InvoiceDetailPage() {
     const { net, vatAmt, gross } = calcTotals(itemForm)
     saveItemMutation.mutate({
       description: itemForm.description,
+      additional_text: itemForm.additional_text || null,
       quantity: parseFloat(itemForm.quantity),
       unit: itemForm.unit || null,
       unit_price_net: parseFloat(itemForm.unit_price_net),
@@ -289,7 +292,12 @@ export function InvoiceDetailPage() {
               {invoice.items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="text-sm text-muted-foreground">{item.position}</TableCell>
-                  <TableCell className="break-words max-w-xs">{item.description}</TableCell>
+                  <TableCell className="break-words max-w-xs">
+                    <div>{item.description}</div>
+                    {item.additional_text && (
+                      <div className="text-xs text-muted-foreground mt-0.5 italic">{item.additional_text}</div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">{String(parseFloat(item.quantity))}</TableCell>
                   <TableCell>{item.unit || '–'}</TableCell>
                   <TableCell className="text-right">{formatCurrency(item.unit_price_net)}</TableCell>
@@ -372,6 +380,15 @@ export function InvoiceDetailPage() {
                 value={itemForm.description}
                 onChange={(e) => handleItemFormChange('description', e.target.value)}
                 required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Zusatztext <span className="text-muted-foreground font-normal">(optional, erscheint in der Rechnung)</span></Label>
+              <textarea
+                className="flex min-h-[72px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={itemForm.additional_text}
+                onChange={(e) => handleItemFormChange('additional_text', e.target.value)}
+                placeholder="z.B. Miete Wohnung EG links, Objekt Musterstraße 1"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">

@@ -80,6 +80,8 @@ class ZugferdService:
             line = doc.trade.items.add()
             line.document.line_id.value = str(item.position)
             line.product.name.value = item.description
+            if item.additional_text:
+                line.product.description.value = item.additional_text
             line.delivery.billed_quantity.amount = item.quantity
             line.delivery.billed_quantity.unit_code = item.unit or "C62"
             line.settlement.trade_tax.type_code.value = "VAT"
@@ -176,7 +178,7 @@ class ZugferdService:
     </ram:AssociatedDocumentLineDocument>
     <ram:SpecifiedTradeProduct>
       <ram:Name>{item.description}</ram:Name>
-    </ram:SpecifiedTradeProduct>
+{f"      <ram:Description>{item.additional_text}</ram:Description>" if item.additional_text else ""}    </ram:SpecifiedTradeProduct>
     <ram:SpecifiedLineTradeAgreement>
       <ram:NetPriceProductTradePrice>
         <ram:ChargeAmount currencyID="{invoice.currency}">{Decimal(str(item.unit_price_net)):.2f}</ram:ChargeAmount>
@@ -421,9 +423,16 @@ class ZugferdService:
                 price_fmt = f"{float(item.unit_price_net):.2f} €"
                 total_fmt = f"{float(item.total_net):.2f} €"
 
+            if item.additional_text:
+                desc_cell = Paragraph(
+                    f"{item.description}<br/><i><font size='7' color='#666666'>{item.additional_text}</font></i>",
+                    ParagraphStyle("desc", fontSize=8, fontName="Helvetica", leading=11),
+                )
+            else:
+                desc_cell = item.description
             item_data.append([
                 str(item.position),
-                item.description,
+                desc_cell,
                 format(Decimal(str(item.quantity)).normalize(), "f"),
                 item.unit or "",
                 price_fmt,
@@ -442,6 +451,7 @@ class ZugferdService:
             ("FONTSIZE", (0, 0), (-1, -1), 8),
             ("ALIGN", (0, 0), (0, -1), "CENTER"),
             ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7fafc")]),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
