@@ -256,6 +256,7 @@ async def update_expense_receipt(
         raise HTTPException(status_code=409, detail="Beleg kann nicht mehr bearbeitet werden")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(receipt, field, value)
+    db.add(receipt)
     await db.flush()
     return await _get_receipt_or_404(receipt_id, db)
 
@@ -276,6 +277,14 @@ async def update_expense_receipt_status(
         receipt.approved_by = current_user.id
         receipt.approved_at = now
         _copy_to_stb_export(receipt.document_path)
+        # IBAN aus Mitarbeiterprofil übernehmen, falls beim Beleg noch nicht hinterlegt
+        if not receipt.reimbursement_iban:
+            res = await db.execute(select(User).where(User.id == receipt.submitted_by))
+            submitter = res.scalar_one_or_none()
+            if submitter and submitter.iban:
+                receipt.reimbursement_iban = submitter.iban
+                if not receipt.reimbursement_account_holder:
+                    receipt.reimbursement_account_holder = submitter.full_name
     elif data.status == ExpenseReceiptStatus.paid:
         receipt.paid_at = now
     db.add(StatusChangeLog(
