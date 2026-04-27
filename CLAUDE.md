@@ -44,7 +44,7 @@ DEMRE/
 │   │   │       ├── incoming_invoices_watcher.py # Watcher: Eingangsrechnungen
 │   │   │       └── expense_receipts_watcher.py  # Watcher: Belege
 │   │   └── config.py            # Einstellungen (Firmendaten, Pfade, API-Keys)
-│   ├── alembic/versions/        # DB-Migrationen (0001–0005)
+│   ├── alembic/versions/        # DB-Migrationen (0001–0008)
 │   └── create_admin.py          # Admin-User anlegen (interaktiv)
 ├── frontend/
 │   ├── src/
