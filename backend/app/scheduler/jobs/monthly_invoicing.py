@@ -24,16 +24,9 @@ async def run_monthly_invoicing():
     from app.config import settings
 
     today = date.today()
-    # Bill for previous month
-    if today.month == 1:
-        period_year = today.year - 1
-        period_month = 12
-    else:
-        period_year = today.year
-        period_month = today.month - 1
-
-    period_from = date(period_year, period_month, 1)
-    period_to = date(period_year, period_month, monthrange(period_year, period_month)[1])
+    # Bill for current month
+    period_from = date(today.year, today.month, 1)
+    period_to = date(today.year, today.month, monthrange(today.year, today.month)[1])
 
     logger.info("monthly_invoicing.start", period_from=str(period_from), period_to=str(period_to))
 
