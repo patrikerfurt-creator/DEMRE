@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, FileText, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
+import { useState, useRef, FormEvent } from 'react'
+import { TrendingUp, FileText, AlertTriangle, CheckCircle, Clock, Search, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import api from '@/lib/api'
 import { formatCurrency, formatDate, INVOICE_STATUS_LABELS, INVOICE_STATUS_COLORS } from '@/lib/utils'
-import type { Invoice, PaymentRun } from '@/types'
+import type { Invoice, PaymentRun, QueryResult } from '@/types'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 const STATUS_COLORS_CHART: Record<string, string> = {
@@ -53,6 +54,33 @@ export function DashboardPage() {
   }))
 
   const lastRun = Array.isArray(runsData) ? runsData[0] : undefined
+
+  const [question, setQuestion] = useState('')
+  const [queryLoading, setQueryLoading] = useState(false)
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null)
+  const [queryError, setQueryError] = useState<string | null>(null)
+  const [sqlExpanded, setSqlExpanded] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  async function handleQuery(e: FormEvent) {
+    e.preventDefault()
+    if (!question.trim()) return
+    setQueryLoading(true)
+    setQueryResult(null)
+    setQueryError(null)
+    setSqlExpanded(false)
+    try {
+      const res = await api.post<QueryResult>('/query', { question })
+      setQueryResult(res.data)
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        'Unbekannter Fehler'
+      setQueryError(msg)
+    } finally {
+      setQueryLoading(false)
+    }
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -111,6 +139,87 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* KI-Datenabfrage */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Search className="h-4 w-4 text-slate-500" />
+            Datenabfrage
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleQuery} className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="z.B. Welcher Kunde hat keine Abo-Rechnung? · Zeige alle Eingangsrechnungen von Kreditor 10001"
+              className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={queryLoading}
+            />
+            <button
+              type="submit"
+              disabled={queryLoading || !question.trim()}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {queryLoading ? 'Lädt…' : 'Fragen'}
+            </button>
+          </form>
+
+          {queryError && (
+            <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-md">
+              {queryError}
+            </div>
+          )}
+
+          {queryResult && (
+            <div className="mt-4 space-y-3">
+              <button
+                onClick={() => setSqlExpanded((v) => !v)}
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600"
+              >
+                {sqlExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                SQL anzeigen
+              </button>
+              {sqlExpanded && (
+                <pre className="text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto font-mono text-slate-600">
+                  {queryResult.sql}
+                </pre>
+              )}
+
+              {queryResult.row_count === 0 ? (
+                <p className="text-sm text-muted-foreground">Keine Ergebnisse</p>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-400">{queryResult.row_count} Ergebnis{queryResult.row_count !== 1 ? 'se' : ''}</p>
+                  <div className="overflow-x-auto rounded-md border border-slate-200">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {queryResult.columns.map((col) => (
+                            <TableHead key={col} className="text-xs whitespace-nowrap">{col}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {queryResult.rows.map((row, i) => (
+                          <TableRow key={i}>
+                            {row.map((cell, j) => (
+                              <TableCell key={j} className="text-sm">{cell ?? '—'}</TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart */}

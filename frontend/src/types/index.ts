@@ -348,3 +348,12 @@ export interface CompanySettings {
   invoice_number_prefix: string
   invoice_number_year_reset: boolean
 }
+
+// ── KI-Datenabfrage ──────────────────────────────────────────────────────────
+
+export interface QueryResult {
+  sql: string
+  columns: string[]
+  rows: (string | null)[][]
+  row_count: number
+}

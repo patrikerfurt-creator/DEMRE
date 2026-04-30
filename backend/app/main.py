@@ -6,6 +6,7 @@ import structlog
 from app.api.v1 import (
     auth, users, customers, articles, contracts, invoices, payment_runs,
     settings as settings_router, creditors, incoming_invoices, expense_receipts, sepa, stb_export,
+    query,
 )
 
 logger = structlog.get_logger()
@@ -68,6 +69,7 @@ app.include_router(incoming_invoices.router, prefix=PREFIX)
 app.include_router(expense_receipts.router, prefix=PREFIX)
 app.include_router(sepa.router, prefix=PREFIX)
 app.include_router(stb_export.router, prefix=PREFIX)
+app.include_router(query.router, prefix=PREFIX)
 
 
 @app.get("/health")
