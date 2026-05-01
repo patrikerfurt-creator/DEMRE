@@ -312,9 +312,9 @@ async def _export_invoice_to_outgoing(invoice: Invoice, db: AsyncSession):
         invoice.pdf_path = pdf_path
         await db.flush()
 
-    if settings.stb_export_dir:
-        os.makedirs(settings.stb_export_dir, exist_ok=True)
-        shutil.copy2(invoice.pdf_path, os.path.join(settings.stb_export_dir, f"{invoice.invoice_number}.pdf"))
+    outgoing_dir = os.path.join(settings.storage_path, "invoices", "outgoing_export")
+    os.makedirs(outgoing_dir, exist_ok=True)
+    shutil.copy2(invoice.pdf_path, os.path.join(outgoing_dir, f"{invoice.invoice_number}.pdf"))
 
 
 @router.get("/{invoice_id}/pdf")

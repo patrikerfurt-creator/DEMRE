@@ -80,9 +80,9 @@ async def run_monthly_invoicing():
                         f.write(pdf_bytes)
                     invoice.pdf_path = pdf_path
 
-                    if settings.stb_export_dir:
-                        os.makedirs(settings.stb_export_dir, exist_ok=True)
-                        shutil.copy2(pdf_path, os.path.join(settings.stb_export_dir, f"{invoice.invoice_number}.pdf"))
+                    outgoing_dir = os.path.join(settings.storage_path, "invoices", "outgoing_export")
+                    os.makedirs(outgoing_dir, exist_ok=True)
+                    shutil.copy2(pdf_path, os.path.join(outgoing_dir, f"{invoice.invoice_number}.pdf"))
 
                     xml_bytes = zugferd_service.build_xml(invoice)
                     invoice.zugferd_xml = xml_bytes.decode("utf-8")
