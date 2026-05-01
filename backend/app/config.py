@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # STB-Export: genehmigte Belege/Rechnungen werden hierhin kopiert (leer = deaktiviert)
     stb_export_dir: str = ""
+    stb_target_dir: str = ""
 
     # KI-Rechnungsextraktion
     anthropic_api_key: Optional[str] = None
