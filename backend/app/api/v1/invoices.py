@@ -238,6 +238,16 @@ async def _recalc_invoice_totals(invoice: Invoice, db: AsyncSession):
     await db.flush()
 
 
+_ALLOWED_TRANSITIONS: dict[InvoiceStatus, set[InvoiceStatus]] = {
+    InvoiceStatus.draft:     {InvoiceStatus.issued},
+    InvoiceStatus.issued:    {InvoiceStatus.sent, InvoiceStatus.paid, InvoiceStatus.overdue, InvoiceStatus.cancelled},
+    InvoiceStatus.sent:      {InvoiceStatus.paid, InvoiceStatus.overdue, InvoiceStatus.cancelled},
+    InvoiceStatus.overdue:   {InvoiceStatus.paid, InvoiceStatus.cancelled},
+    InvoiceStatus.paid:      set(),
+    InvoiceStatus.cancelled: set(),
+}
+
+
 @router.put("/{invoice_id}/status", response_model=InvoiceResponse)
 async def update_invoice_status(
     invoice_id: str,
@@ -252,6 +262,12 @@ async def update_invoice_status(
     invoice = result.scalar_one_or_none()
     if not invoice:
         raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+
+    if data.status not in _ALLOWED_TRANSITIONS.get(invoice.status, set()):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Statuswechsel von '{invoice.status}' nach '{data.status}' ist nicht erlaubt.",
+        )
 
     invoice.status = data.status
     now = datetime.now(timezone.utc)
@@ -270,7 +286,7 @@ async def update_invoice_status(
 
 
 async def _export_invoice_to_outgoing(invoice: Invoice, db: AsyncSession):
-    """Generiert das PDF (falls nötig) und kopiert es in den Ausgangsrechnungen-Export-Ordner."""
+    """Generiert das PDF (falls nötig) und kopiert es in den STB-Export-Ordner."""
     import shutil
     from app.models.customer import Customer
     from app.models.article import Article
@@ -296,9 +312,9 @@ async def _export_invoice_to_outgoing(invoice: Invoice, db: AsyncSession):
         invoice.pdf_path = pdf_path
         await db.flush()
 
-    export_dir = os.path.join(settings.storage_path, "invoices", "outgoing_export")
-    os.makedirs(export_dir, exist_ok=True)
-    shutil.copy2(invoice.pdf_path, os.path.join(export_dir, f"{invoice.invoice_number}.pdf"))
+    if settings.stb_export_dir:
+        os.makedirs(settings.stb_export_dir, exist_ok=True)
+        shutil.copy2(invoice.pdf_path, os.path.join(settings.stb_export_dir, f"{invoice.invoice_number}.pdf"))
 
 
 @router.get("/{invoice_id}/pdf")

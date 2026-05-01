@@ -14,7 +14,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@/hooks/use-toast'
 import { formatDate, formatCurrency, INVOICE_STATUS_LABELS, INVOICE_STATUS_COLORS } from '@/lib/utils'
 
-const STATUS_OPTIONS: InvoiceStatus[] = ['draft', 'issued', 'sent', 'paid', 'overdue', 'cancelled']
+const ALLOWED_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
+  draft:     ['issued'],
+  issued:    ['sent', 'paid', 'overdue', 'cancelled'],
+  sent:      ['paid', 'overdue', 'cancelled'],
+  overdue:   ['paid', 'cancelled'],
+  paid:      [],
+  cancelled: [],
+}
 
 const EMPTY_ITEM_FORM = {
   description: '',
@@ -211,13 +218,14 @@ export function InvoiceDetailPage() {
           <Select
             value={invoice.status}
             onValueChange={(v) => statusMutation.mutate(v as InvoiceStatus)}
-            disabled={statusMutation.isPending}
+            disabled={statusMutation.isPending || ALLOWED_TRANSITIONS[invoice.status].length === 0}
           >
             <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {STATUS_OPTIONS.map((s) => (
+              <SelectItem value={invoice.status}>{INVOICE_STATUS_LABELS[invoice.status]}</SelectItem>
+              {ALLOWED_TRANSITIONS[invoice.status].map((s) => (
                 <SelectItem key={s} value={s}>{INVOICE_STATUS_LABELS[s]}</SelectItem>
               ))}
             </SelectContent>
