@@ -18,6 +18,7 @@ export function InvoiceListPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [genPeriodFrom, setGenPeriodFrom] = useState('')
@@ -25,13 +26,14 @@ export function InvoiceListPage() {
   const [genAutoIssue, setGenAutoIssue] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['invoices', statusFilter, dateFrom, dateTo, page],
+    queryKey: ['invoices', statusFilter, dateFrom, dateTo, search, page],
     queryFn: () =>
       api.get<Invoice[]>('/invoices', {
         params: {
           status: statusFilter !== 'all' ? statusFilter : undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
+          search: search || undefined,
           page,
           page_size: 25,
         },
@@ -94,6 +96,15 @@ export function InvoiceListPage() {
           ))}
         </div>
         <div className="flex items-center gap-2 ml-auto">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+            <Input
+              className="pl-8 w-56"
+              placeholder="Nummer, Kunde..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            />
+          </div>
           <Label className="text-sm">Von</Label>
           <Input type="date" className="w-36" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           <Label className="text-sm">Bis</Label>

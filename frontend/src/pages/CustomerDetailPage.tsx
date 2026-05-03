@@ -498,7 +498,7 @@ export function CustomerDetailPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Kundennummer</Label>
-                  <Input {...register('customer_number')} readOnly className="bg-muted" />
+                  <Input {...register('customer_number')} />
                 </div>
                 <div className="space-y-2">
                   <Label>Notizen</Label>

@@ -29,6 +29,7 @@ async def list_invoices(
     status: Optional[InvoiceStatus] = Query(None),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
+    search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -36,6 +37,16 @@ async def list_invoices(
 ):
     query = select(Invoice).options(selectinload(Invoice.items))
 
+    if search:
+        like = f"%{search}%"
+        query = query.join(Customer, Invoice.customer_id == Customer.id).where(
+            or_(
+                Invoice.invoice_number.ilike(like),
+                Customer.company_name.ilike(like),
+                Customer.first_name.ilike(like),
+                Customer.last_name.ilike(like),
+            )
+        )
     if customer_id:
         query = query.where(Invoice.customer_id == customer_id)
     if status:

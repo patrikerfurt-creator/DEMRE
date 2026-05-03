@@ -604,7 +604,7 @@ export function CustomerListPage() {
                 {editing && (
                   <div className="space-y-2">
                     <Label>Kundennummer</Label>
-                    <Input {...register('customer_number')} readOnly className="bg-muted" />
+                    <Input {...register('customer_number')} />
                   </div>
                 )}
                 <div className={`space-y-2 ${editing ? '' : 'col-span-2'}`}>
