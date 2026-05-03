@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Pencil, Trash2, Loader2, UserCheck, UserX } from 'lucide-react'
 import api from '@/lib/api'
 import type { User } from '@/types'
+import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,6 +50,8 @@ function formatApiError(err: any): string {
 
 export function MitarbeiterListPage() {
   const queryClient = useQueryClient()
+  const { user: currentUser } = useAuthStore()
+  const isAdmin = currentUser?.role === 'admin'
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editing, setEditing] = useState<User | null>(null)
@@ -148,10 +151,12 @@ export function MitarbeiterListPage() {
           <h1 className="text-2xl font-bold text-slate-900">Mitarbeiter</h1>
           <p className="text-sm text-slate-500 mt-1">Benutzerkonten und Bankverbindungen verwalten</p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          Mitarbeiter anlegen
-        </Button>
+        {isAdmin && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            Mitarbeiter anlegen
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -207,17 +212,21 @@ export function MitarbeiterListPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(user)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => { setToDelete(user); setDeleteDialogOpen(true) }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {(isAdmin || user.id === currentUser?.id) && (
+                          <Button size="sm" variant="ghost" onClick={() => openEdit(user)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-700"
+                            onClick={() => { setToDelete(user); setDeleteDialogOpen(true) }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -249,17 +258,19 @@ export function MitarbeiterListPage() {
                 {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
               </div>
 
-              <div className="space-y-2">
-                <Label>Rolle</Label>
-                <select
-                  {...register('role')}
-                  className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background"
-                >
-                  <option value="user">Mitarbeiter</option>
-                  <option value="admin">Admin</option>
-                  <option value="readonly">Nur-Lesen</option>
-                </select>
-              </div>
+              {isAdmin && (
+                <div className="space-y-2">
+                  <Label>Rolle</Label>
+                  <select
+                    {...register('role')}
+                    className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background"
+                  >
+                    <option value="user">Mitarbeiter</option>
+                    <option value="admin">Admin</option>
+                    <option value="readonly">Nur-Lesen</option>
+                  </select>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label>{editing ? 'Neues Passwort (leer lassen = unverändert)' : 'Passwort *'}</Label>
@@ -297,15 +308,17 @@ export function MitarbeiterListPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  {...register('is_active')}
-                  className="h-4 w-4"
-                />
-                <Label htmlFor="is_active">Konto aktiv</Label>
-              </div>
+              {isAdmin && (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    {...register('is_active')}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="is_active">Konto aktiv</Label>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="shrink-0 pt-4 border-t mt-4">
