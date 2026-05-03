@@ -36,10 +36,24 @@ async def generate_contract_number(db: AsyncSession) -> str:
 
 
 async def generate_customer_number(db: AsyncSession) -> str:
-    """Generate a sequential 6-digit customer number starting at 100001."""
+    """Generate a sequential 5-digit customer number starting at 10001."""
     await db.execute(
-        text("CREATE SEQUENCE IF NOT EXISTS customer_number_seq START 100001")
+        text("CREATE SEQUENCE IF NOT EXISTS customer_number_seq START 10001")
     )
+    # Ensure sequence is not behind any manually set customer number
+    await db.execute(text("""
+        SELECT setval(
+            'customer_number_seq',
+            GREATEST(
+                (SELECT last_value FROM customer_number_seq),
+                COALESCE(
+                    (SELECT MAX(customer_number::bigint) FROM customers
+                     WHERE customer_number ~ '^[0-9]+$'),
+                    9999
+                )
+            )
+        )
+    """))
     result = await db.execute(text("SELECT nextval('customer_number_seq')"))
     return str(result.scalar())
 
