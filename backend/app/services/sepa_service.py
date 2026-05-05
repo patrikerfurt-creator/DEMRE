@@ -191,14 +191,16 @@ class SepaService:
                 or f"{creditor.first_name or ''} {creditor.last_name or ''}".strip()
                 or "Unbekannt"
             )
-            ref = inv.external_invoice_number or inv.document_number
+            ext_ref = inv.external_invoice_number or inv.document_number
+            date_str = inv.invoice_date.strftime("%d.%m.%Y") if inv.invoice_date else ""
+            description = f"RE {ext_ref} vom {date_str}" if date_str else f"RE {ext_ref}"
             items.append({
                 "name": name,
                 "iban": creditor.iban,
                 "bic": creditor.bic or "NOTPROVIDED",
                 "amount": Decimal(str(inv.total_gross)),
-                "reference": ref,
-                "description": f"Rechnung {ref}",
+                "reference": ext_ref,
+                "description": description,
             })
         return self._build_credit_transfer_xml(items, exec_date)
 
