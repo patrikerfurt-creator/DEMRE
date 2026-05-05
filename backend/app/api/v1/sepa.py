@@ -67,13 +67,16 @@ async def payment_export(
                 or "Unbekannt"
             )
             amount = Decimal(str(inv.total_gross))
+            ext_ref = inv.external_invoice_number or inv.document_number
+            date_str = inv.invoice_date.strftime("%d.%m.%Y") if inv.invoice_date else ""
+            description = f"RE {ext_ref} vom {date_str}" if date_str else f"RE {ext_ref}"
             items.append({
                 "name": name,
                 "iban": creditor.iban,
                 "bic": creditor.bic or "NOTPROVIDED",
                 "amount": amount,
-                "reference": inv.document_number,
-                "description": f"Eingangsrechnung {inv.document_number}",
+                "reference": ext_ref,
+                "description": description,
             })
             total += amount
 
