@@ -23,6 +23,8 @@ class CompanySettings(BaseModel):
     company_bank_name: Optional[str] = None
     invoice_number_prefix: Optional[str] = None
     invoice_number_year_reset: Optional[bool] = None
+    datev_berater_number: Optional[str] = None
+    datev_mandant_number: Optional[str] = None
 
 
 @router.get("", response_model=CompanySettings)
@@ -42,6 +44,8 @@ async def get_settings(_: User = Depends(get_current_user)):
         company_bank_name=settings.company_bank_name,
         invoice_number_prefix=None,
         invoice_number_year_reset=None,
+        datev_berater_number=settings.datev_berater_number,
+        datev_mandant_number=settings.datev_mandant_number,
     )
 
 
@@ -63,6 +67,8 @@ async def update_settings(
     settings.company_iban = data.company_iban
     settings.company_bic = data.company_bic
     settings.company_bank_name = data.company_bank_name
+    settings.datev_berater_number = data.datev_berater_number
+    settings.datev_mandant_number = data.datev_mandant_number
 
     # Also persist to .env file
     import os
@@ -85,6 +91,8 @@ async def update_settings(
         "COMPANY_IBAN": data.company_iban or "",
         "COMPANY_BIC": data.company_bic or "",
         "COMPANY_BANK_NAME": data.company_bank_name or "",
+        "DATEV_BERATER_NUMBER": data.datev_berater_number or "",
+        "DATEV_MANDANT_NUMBER": data.datev_mandant_number or "",
     }
 
     updated_keys = set()

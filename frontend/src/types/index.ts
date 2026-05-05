@@ -347,6 +347,8 @@ export interface CompanySettings {
   company_bank_name?: string
   invoice_number_prefix: string
   invoice_number_year_reset: boolean
+  datev_berater_number?: string
+  datev_mandant_number?: string
 }
 
 // ── KI-Datenabfrage ──────────────────────────────────────────────────────────

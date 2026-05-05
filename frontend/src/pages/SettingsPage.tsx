@@ -24,6 +24,8 @@ const schema = z.object({
   company_iban: z.string().optional(),
   company_bic: z.string().optional(),
   company_bank_name: z.string().optional(),
+  datev_berater_number: z.string().optional(),
+  datev_mandant_number: z.string().optional(),
 })
 type FormData = z.infer<typeof schema>
 
@@ -50,6 +52,8 @@ export function SettingsPage() {
       company_iban: settings.company_iban || '',
       company_bic: settings.company_bic || '',
       company_bank_name: settings.company_bank_name || '',
+      datev_berater_number: settings.datev_berater_number || '',
+      datev_mandant_number: settings.datev_mandant_number || '',
     } : undefined,
   })
 
@@ -141,6 +145,26 @@ export function SettingsPage() {
               <div className="col-span-2 space-y-2">
                 <Label>Kreditinstitut</Label>
                 <Input {...register('company_bank_name')} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* DATEV */}
+        <Card>
+          <CardHeader>
+            <CardTitle>DATEV-Export</CardTitle>
+            <CardDescription>Berater- und Mandantennummer für den DATEV Buchungsstapel-Export.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Beraternummer</Label>
+                <Input {...register('datev_berater_number')} placeholder="12345" />
+              </div>
+              <div className="space-y-2">
+                <Label>Mandantennummer</Label>
+                <Input {...register('datev_mandant_number')} placeholder="67890" />
               </div>
             </div>
           </CardContent>

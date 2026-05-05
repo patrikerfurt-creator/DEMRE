@@ -1,5 +1,5 @@
 """
-DATEV Buchungsstapel EXTF CSV generator (format version 700).
+DATEV Buchungsstapel EXTF CSV generator (format version 700, Stapelversion 13).
 """
 from datetime import date
 from decimal import Decimal
@@ -33,7 +33,7 @@ class DatevService:
         period_to: date,
     ) -> bytes:
         """
-        Generate DATEV Buchungsstapel CSV (EXTF format version 700).
+        Generate DATEV Buchungsstapel CSV (EXTF format version 700, Stapelversion 13).
         Returns bytes (UTF-8 with BOM for Excel compatibility).
         """
         output = io.StringIO()
@@ -46,14 +46,14 @@ class DatevService:
             "700",      # format version
             "21",       # data category: 21 = Buchungsstapel
             "Buchungsstapel",
-            "12",       # Formatversion Buchungsstapel
+            "13",       # Formatversion Buchungsstapel
             created_at,
             "",         # Importiert
             "",         # Herkunft
             "",         # Exportiert von
             "",         # Importiert von
-            "",         # Berater
-            "",         # Mandant
+            settings.datev_berater_number or "",  # Berater
+            settings.datev_mandant_number or "",  # Mandant
             period_from.strftime("%Y%m%d"),  # WJ-Beginn
             "4",        # Sachkontenlänge
             period_from.strftime("%Y%m%d"),  # Datum von
@@ -185,8 +185,8 @@ class DatevService:
                     "",            # Skonto
                     buchungstext,  # Buchungstext
                 ]
-                # Pad to 63 fields
-                while len(row) < 63:
+                # Pad to 64 fields (Stapelversion 13)
+                while len(row) < 64:
                     row.append("")
 
                 output.write(";".join(row) + "\r\n")

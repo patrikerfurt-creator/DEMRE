@@ -52,5 +52,9 @@ class Settings(BaseSettings):
     invoice_number_prefix: str = "RE"
     invoice_number_year_reset: bool = True
 
+    # DATEV export
+    datev_berater_number: Optional[str] = None
+    datev_mandant_number: Optional[str] = None
+
 
 settings = Settings()
