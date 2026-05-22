@@ -15,5 +15,7 @@
     "\\\\192.168.161.11\\daten\\1-Scan\\DEM_AR",
     "\\\\192.168.161.11\\daten\\1-DOPRE"
   ],
-  "local_stb_folder": "\\\\192.168.161.11\\daten\\Patrik_Maurer\\Demme Intern\\Buchhaltung STB\\15444-40005\\Rechnungseingang"
+  "local_stb_folder": "\\\\192.168.161.11\\daten\\Patrik_Maurer\\Demme Intern\\Buchhaltung STB\\15444-40005\\Rechnungseingang",
+
+  "stb_printer": "FFM_Drucker_PS"
 }

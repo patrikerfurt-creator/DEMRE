@@ -15,6 +15,7 @@ from pathlib import Path
 from datetime import datetime
 
 import paramiko
+import win32api
 import win32serviceutil
 import win32service
 import win32event
@@ -199,6 +200,16 @@ class FolderHandler(FileSystemEventHandler):
         logging.info(f"Archiviert: {dest}")
 
 
+# ── Drucken ───────────────────────────────────────────────────────────────────
+def print_file(path: Path, printer: str) -> None:
+    """Sendet eine Datei an den angegebenen Windows-Drucker."""
+    try:
+        win32api.ShellExecute(0, "printto", str(path), f'"{printer}"', None, 0)
+        logging.info(f"Druckauftrag gesendet: {path.name}  →  {printer}")
+    except Exception as exc:
+        logging.warning(f"Drucken fehlgeschlagen ({path.name}): {exc}")
+
+
 # ── Generischer SFTP-Download mit serverseitiger Archivierung ─────────────────
 def _unique_dest(folder: Path, filename: str) -> Path:
     """Gibt einen kollisionsfreien Zielpfad zurück."""
@@ -216,6 +227,7 @@ def _sftp_download_folder(
     local_dirs: list[Path],
     label: str,
     extensions: set[str] | None = None,
+    printer: str | None = None,
 ):
     """
     Lädt alle Dateien aus `remote_dir` in den ersten Ordner von `local_dirs` herunter
@@ -271,7 +283,11 @@ def _sftp_download_folder(
             # 2. Erst nach erfolgreichem Download serverseitig archivieren
             sftp.rename(remote_path, f"{archive}/{entry.filename}")
 
-            # 3. Lokal in weitere Zielordner kopieren
+            # 3. Drucken (optional)
+            if printer:
+                print_file(dest, printer)
+
+            # 4. Lokal in weitere Zielordner kopieren
             for extra in extras:
                 extra_dest = _unique_dest(extra, dest.name)
                 try:
@@ -322,13 +338,16 @@ def _outgoing_download_loop(config: dict, stop_event: threading.Event):
 def _stb_download_loop(config: dict, stop_event: threading.Event):
     local_dirs = _resolve_dirs(config["local_stb_folder"])
     remote_dir = config["remote_stb_export_dir"]
+    printer    = config.get("stb_printer")
     for d in local_dirs:
         d.mkdir(parents=True, exist_ok=True)
     logging.info(f"[STB] STB-Export-Download aktiv (alle 10 min) → {', '.join(str(d) for d in local_dirs)}")
+    if printer:
+        logging.info(f"[STB] Drucker: {printer}")
 
     while not stop_event.is_set():
         try:
-            _sftp_download_folder(config, remote_dir, local_dirs, "STB")
+            _sftp_download_folder(config, remote_dir, local_dirs, "STB", printer=printer)
         except Exception as exc:
             logging.error(f"[STB] Unerwarteter Fehler: {exc}")
         stop_event.wait(600)

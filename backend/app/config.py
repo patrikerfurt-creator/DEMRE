@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # KI-Rechnungsextraktion
     anthropic_api_key: Optional[str] = None
+    anthropic_model: str = "claude-haiku-4-5-20251001"
 
     # Company defaults
     company_name: str = "Demme Immobilien Verwaltung GmbH"

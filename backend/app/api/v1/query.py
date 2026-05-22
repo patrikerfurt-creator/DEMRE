@@ -84,7 +84,7 @@ async def run_natural_language_query(
 
     try:
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=settings.anthropic_model,
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": req.question}],

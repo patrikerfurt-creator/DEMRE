@@ -103,7 +103,7 @@ async def _extract_with_prompt(filepath: str, prompt: str) -> dict:
             return {"extraction_error": f"Dateityp {ext} wird für Extraktion nicht unterstützt"}
 
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=settings.anthropic_model,
             max_tokens=1024,
             messages=[
                 {
@@ -129,7 +129,10 @@ async def _extract_with_prompt(filepath: str, prompt: str) -> dict:
         return {"extraction_error": f"Ungültiges JSON vom Modell: {e}"}
     except Exception as e:
         logger.error("extractor.error", filepath=filepath, error=str(e))
-        return {"extraction_error": str(e)}
+        err_str = str(e)
+        if "529" in err_str or "overloaded" in err_str.lower():
+            return {"extraction_error": "KI-Dienst vorübergehend überlastet. Bitte in einigen Minuten erneut versuchen."}
+        return {"extraction_error": err_str}
 
 
 async def extract_invoice_data(filepath: str) -> dict:
