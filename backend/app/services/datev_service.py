@@ -161,7 +161,11 @@ class DatevService:
                 vat_groups[rate_key]["gross"] += item.total_gross
 
             belegdatum = invoice.invoice_date.strftime("%d%m")  # DDMM
-            konto = (customer.datev_account_number if customer else None) or "10000"
+            konto = (
+                (customer.datev_account_number if customer and customer.datev_account_number else None)
+                or (customer.customer_number if customer else None)
+                or "10000"
+            )
             buchungstext = f"Re. {invoice.invoice_number}"[:60]
             belegfeld1 = invoice.invoice_number[:36]
 
