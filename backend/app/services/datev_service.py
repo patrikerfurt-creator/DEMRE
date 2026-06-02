@@ -1,7 +1,7 @@
 """
 DATEV Buchungsstapel EXTF CSV generator (format version 700, Stapelversion 13).
 """
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 import io
@@ -40,7 +40,7 @@ class DatevService:
 
         # ── Row 1: DATEV format header ──
         # EXTF;\Version;Datenkategorie;Formatname;Formatversion;Erzeugt am;...
-        created_at = date.today().strftime("%Y%m%d%H%M%S") + "000"
+        created_at = datetime.now().strftime("%Y%m%d%H%M%S") + "000"
         header1_fields = [
             "EXTF",
             "700",      # format version
@@ -48,100 +48,91 @@ class DatevService:
             "Buchungsstapel",
             "13",       # Formatversion Buchungsstapel
             created_at,
-            "",         # Importiert
-            "",         # Herkunft
-            "",         # Exportiert von
-            "",         # Importiert von
-            settings.datev_berater_number or "",  # Berater
-            settings.datev_mandant_number or "",  # Mandant
-            period_from.strftime("%Y%m%d"),  # WJ-Beginn
-            "4",        # Sachkontenlänge
-            period_from.strftime("%Y%m%d"),  # Datum von
-            period_to.strftime("%Y%m%d"),    # Datum bis
-            f"RE {period_from.strftime('%m/%Y')}",  # Bezeichnung
-            "",         # Diktatzeichen
-            "1",        # Buchungstyp: 1 = Finanzbuchführung
-            "0",        # Rechnungslegungszweck
-            "0",        # Festschreibung
-            "EUR",      # WKZ
-            "",         # reserved
-            "",         # Derivatskennzeichen
-            "",         # reserved
-            "",         # reserved
-            "",         # SKR
-            "",         # Branchenlösungs-ID
-            "",         # reserved
-            "",         # reserved
-            "",         # Anwendungsinformation
+            "",         # Importiert      (Index 6)
+            "DV",       # Herkunft        (Index 7)
+            "",         # Exportiert von  (Index 8)
+            "",         # Importiert von  (Index 9)
+            settings.datev_berater_number or "",  # Berater   (Index 10)
+            settings.datev_mandant_number or "",  # Mandant   (Index 11)
+            period_from.strftime("%Y%m%d"),  # WJ-Beginn (Index 12)
+            "4",        # Sachkontenlänge (Index 13)
+            period_from.strftime("%Y%m%d"),  # Datum von (Index 14)
+            period_to.strftime("%Y%m%d"),    # Datum bis (Index 15)
+            f"RE {period_from.strftime('%m/%Y')}",  # Bezeichnung (Index 16)
+            "",         # Diktatzeichen   (Index 17)
+            "1",        # Buchungstyp     (Index 18)
+            "0",        # Rechnungslegungszweck (Index 19)
+            "0",        # Festschreibung  (Index 20)
+            "",         # WKZ             (Index 21)
+            "",         # reserved        (Index 22)
+            "",         # Derivatskennzeichen (Index 23)
+            "",         # reserved        (Index 24)
+            "",         # reserved        (Index 25)
+            "",         # SKR             (Index 26)
+            "",         # Branchenlösungs-ID (Index 27)
+            "",         # reserved        (Index 28)
+            "",         # reserved        (Index 29)
+            "",         # Anwendungsinformation (Index 30)
         ]
+        while len(header1_fields) < 126:
+            header1_fields.append("")
         output.write(";".join(header1_fields) + "\r\n")
 
         # ── Row 2: Column headers ──
         header2_fields = [
-            "Umsatz (ohne Soll/Haben-Kz)",
-            "Soll/Haben-Kennzeichen",
-            "WKZ Umsatz",
-            "Kurs",
-            "Basis-Umsatz",
-            "WKZ Basis-Umsatz",
-            "Konto",
-            "Gegenkonto (ohne BU-Schlüssel)",
-            "BU-Schlüssel",
-            "Belegdatum",
-            "Belegfeld 1",
-            "Belegfeld 2",
-            "Skonto",
-            "Buchungstext",
-            "Postensperre",
-            "Diverse Adressnummer",
-            "Geschäftspartnerbank",
-            "Sachverhalt",
-            "Zinssperre",
-            "Beleglink",
-            "Beleginfo-Art 1",
-            "Beleginfo-Inhalt 1",
-            "Beleginfo-Art 2",
-            "Beleginfo-Inhalt 2",
-            "Beleginfo-Art 3",
-            "Beleginfo-Inhalt 3",
-            "Beleginfo-Art 4",
-            "Beleginfo-Inhalt 4",
-            "Beleginfo-Art 5",
-            "Beleginfo-Inhalt 5",
-            "Beleginfo-Art 6",
-            "Beleginfo-Inhalt 6",
-            "Beleginfo-Art 7",
-            "Beleginfo-Inhalt 7",
-            "Beleginfo-Art 8",
-            "Beleginfo-Inhalt 8",
-            "KOST1 - Kostenstelle",
-            "KOST2 - Kostenstelle",
-            "KOST-Menge",
-            "EU-Land u. UStID",
-            "EU-Steuersatz",
-            "Abw. Versteuerungsart",
-            "Sachverhalt L+L",
-            "Funktionsergänzung L+L",
-            "BU 49 Hauptfunktionstyp",
-            "BU 49 Hauptfunktionsnummer",
+            "Umsatz (ohne Soll/Haben-Kz)", "Soll/Haben-Kennzeichen", "WKZ Umsatz",
+            "Kurs", "Basis-Umsatz", "WKZ Basis-Umsatz", "Konto",
+            "Gegenkonto (ohne BU-Schlüssel)", "BU-Schlüssel", "Belegdatum",
+            "Belegfeld 1", "Belegfeld 2", "Skonto", "Buchungstext", "Postensperre",
+            "Diverse Adressnummer", "Geschäftspartnerbank", "Sachverhalt",
+            "Zinssperre", "Beleglink",
+            "Beleginfo - Art 1", "Beleginfo - Inhalt 1",
+            "Beleginfo - Art 2", "Beleginfo - Inhalt 2",
+            "Beleginfo - Art 3", "Beleginfo - Inhalt 3",
+            "Beleginfo - Art 4", "Beleginfo - Inhalt 4",
+            "Beleginfo - Art 5", "Beleginfo - Inhalt 5",
+            "Beleginfo - Art 6", "Beleginfo - Inhalt 6",
+            "Beleginfo - Art 7", "Beleginfo - Inhalt 7",
+            "Beleginfo - Art 8", "Beleginfo - Inhalt 8",
+            "KOST1 - Kostenstelle", "KOST2 - Kostenstelle", "Kost-Menge",
+            "EU-Land u. UStID (Bestimmung)", "EU-Steuersatz (Bestimmung)",
+            "Abw. Versteuerungsart", "Sachverhalt L+L", "Funktionsergänzung L+L",
+            "BU 49 Hauptfunktionstyp", "BU 49 Hauptfunktionsnummer",
             "BU 49 Funktionsergänzung",
-            "Zusatzinformation-Art 1",
-            "Zusatzinformation-Inhalt 1",
-            "Zusatzinformation-Art 2",
-            "Zusatzinformation-Inhalt 2",
-            "Stück",
-            "Gewicht",
-            "Zahlweise",
-            "Forderungsart",
-            "Veranlagungsjahr",
-            "Zugeordnete Fälligkeit",
-            "Skontotyp",
-            "Auftragsnummer",
-            "Land",
-            "Abrechnungsreferenz",
-            "BVV-Position (Betriebsvermögensvergleich)",
-            "EU-Mitgliedstaat u. UStID Ursprungsland",
-            "EU-Steuersatz Ursprungsland",
+            "Zusatzinformation - Art 1",  "Zusatzinformation- Inhalt 1",
+            "Zusatzinformation - Art 2",  "Zusatzinformation- Inhalt 2",
+            "Zusatzinformation - Art 3",  "Zusatzinformation- Inhalt 3",
+            "Zusatzinformation - Art 4",  "Zusatzinformation- Inhalt 4",
+            "Zusatzinformation - Art 5",  "Zusatzinformation- Inhalt 5",
+            "Zusatzinformation - Art 6",  "Zusatzinformation- Inhalt 6",
+            "Zusatzinformation - Art 7",  "Zusatzinformation- Inhalt 7",
+            "Zusatzinformation - Art 8",  "Zusatzinformation- Inhalt 8",
+            "Zusatzinformation - Art 9",  "Zusatzinformation- Inhalt 9",
+            "Zusatzinformation - Art 10", "Zusatzinformation- Inhalt 10",
+            "Zusatzinformation - Art 11", "Zusatzinformation- Inhalt 11",
+            "Zusatzinformation - Art 12", "Zusatzinformation- Inhalt 12",
+            "Zusatzinformation - Art 13", "Zusatzinformation- Inhalt 13",
+            "Zusatzinformation - Art 14", "Zusatzinformation- Inhalt 14",
+            "Zusatzinformation - Art 15", "Zusatzinformation- Inhalt 15",
+            "Zusatzinformation - Art 16", "Zusatzinformation- Inhalt 16",
+            "Zusatzinformation - Art 17", "Zusatzinformation- Inhalt 17",
+            "Zusatzinformation - Art 18", "Zusatzinformation- Inhalt 18",
+            "Zusatzinformation - Art 19", "Zusatzinformation- Inhalt 19",
+            "Zusatzinformation - Art 20", "Zusatzinformation- Inhalt 20",
+            "Stück", "Gewicht", "Zahlweise", "Forderungsart", "Veranlagungsjahr",
+            "Zugeordnete Fälligkeit", "Skontotyp", "Auftragsnummer",
+            "Buchungstyp (Anzahlungen)", "USt-Schlüssel (Anzahlungen)",
+            "EU-Land (Anzahlungen)", "Sachverhalt L+L (Anzahlungen)",
+            "EU-Steuersatz (Anzahlungen)", "Erlöskonto (Anzahlungen)",
+            "Herkunft-Kz", "Buchungs GUID", "KOST-Datum", "SEPA-Mandatsreferenz",
+            "Skontosperre", "Gesellschaftername", "Beteiligtennummer",
+            "Identifikationsnummer", "Zeichnernummer", "Postensperre bis",
+            "Bezeichnung SoBil-Sachverhalt", "Kennzeichen SoBil-Buchung",
+            "Festschreibung", "Leistungsdatum", "Datum Zuord. Steuerperiode",
+            "Fälligkeit", "Generalumkehr (GU)", "Steuersatz", "Land",
+            "Abrechnungsreferenz", "BVV-Position",
+            "EU-Land u. UStID (Ursprung)", "EU-Steuersatz (Ursprung)",
+            "Abw. Skontokonto", "Besteuerungsart Leistender",
         ]
         output.write(";".join(header2_fields) + "\r\n")
 
@@ -189,8 +180,7 @@ class DatevService:
                     "",            # Skonto
                     buchungstext,  # Buchungstext
                 ]
-                # Pad to 64 fields (Stapelversion 13)
-                while len(row) < 64:
+                while len(row) < 126:
                     row.append("")
 
                 output.write(";".join(row) + "\r\n")
