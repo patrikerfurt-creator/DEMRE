@@ -54,7 +54,7 @@ class DatevService:
             "",         # Importiert von  (Index 9)
             settings.datev_berater_number or "",  # Berater   (Index 10)
             settings.datev_mandant_number or "",  # Mandant   (Index 11)
-            period_from.strftime("%Y%m%d"),  # WJ-Beginn (Index 12)
+            period_from.strftime("%Y") + "0101",  # WJ-Beginn (Index 12)
             "4",        # Sachkontenlänge (Index 13)
             period_from.strftime("%Y%m%d"),  # Datum von (Index 14)
             period_to.strftime("%Y%m%d"),    # Datum bis (Index 15)
