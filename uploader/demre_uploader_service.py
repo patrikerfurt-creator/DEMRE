@@ -275,26 +275,42 @@ def _sftp_download_folder(
             remote_path = f"{remote_dir}/{entry.filename}"
             dest        = _unique_dest(primary, entry.filename)
 
-            # 1. In primären Ordner herunterladen
-            sftp.get(remote_path, str(dest))
-            logging.info(f"[{label}] Heruntergeladen: {entry.filename}  →  {dest}")
-            downloaded += 1
+            try:
+                # 1. In primären Ordner herunterladen
+                sftp.get(remote_path, str(dest))
+                logging.info(f"[{label}] Heruntergeladen: {entry.filename}  →  {dest}")
+                downloaded += 1
 
-            # 2. Erst nach erfolgreichem Download serverseitig archivieren
-            sftp.rename(remote_path, f"{archive}/{entry.filename}")
-
-            # 3. Drucken (optional)
-            if printer:
-                print_file(dest, printer)
-
-            # 4. Lokal in weitere Zielordner kopieren
-            for extra in extras:
-                extra_dest = _unique_dest(extra, dest.name)
+                # 2. Erst nach erfolgreichem Download serverseitig archivieren.
+                #    Existiert im Archiv bereits eine gleichnamige Datei (z.B. weil der
+                #    Beleg erneut exportiert wurde), mit Zeitstempel ausweichen statt
+                #    fehlzuschlagen — sonst blockiert diese eine Datei alle folgenden.
+                archive_dest = f"{archive}/{entry.filename}"
                 try:
-                    shutil.copy2(dest, extra_dest)
-                    logging.info(f"[{label}] Kopiert nach: {extra_dest}")
-                except Exception as exc:
-                    logging.warning(f"[{label}] Kopieren nach {extra} fehlgeschlagen: {exc}")
+                    sftp.stat(archive_dest)
+                    stem, ext = Path(entry.filename).stem, Path(entry.filename).suffix
+                    archive_dest = f"{archive}/{stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
+                except FileNotFoundError:
+                    pass
+                sftp.rename(remote_path, archive_dest)
+
+                # 3. Drucken (optional)
+                if printer:
+                    print_file(dest, printer)
+
+                # 4. Lokal in weitere Zielordner kopieren
+                for extra in extras:
+                    extra_dest = _unique_dest(extra, dest.name)
+                    try:
+                        shutil.copy2(dest, extra_dest)
+                        logging.info(f"[{label}] Kopiert nach: {extra_dest}")
+                    except Exception as exc:
+                        logging.warning(f"[{label}] Kopieren nach {extra} fehlgeschlagen: {exc}")
+            except Exception as exc:
+                # Ein Fehler bei dieser Datei darf die übrigen Dateien im selben
+                # Zyklus nicht blockieren.
+                logging.warning(f"[{label}] Verarbeitung fehlgeschlagen ({entry.filename}): {exc}")
+                continue
 
         if downloaded:
             logging.info(f"[{label}] {downloaded} Datei(en) heruntergeladen.")
