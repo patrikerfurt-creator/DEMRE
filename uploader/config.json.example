@@ -17,5 +17,5 @@
   ],
   "local_stb_folder": "\\\\192.168.161.11\\daten\\Patrik_Maurer\\Demme Intern\\Buchhaltung STB\\15444-40005\\Rechnungseingang",
 
-  "stb_printer": "FFM_Drucker_PS"
+  "ar_printer": "FFM_Drucker_PS"
 }

@@ -337,13 +337,16 @@ def _resolve_dirs(value) -> list[Path]:
 def _outgoing_download_loop(config: dict, stop_event: threading.Event):
     local_dirs = _resolve_dirs(config["local_outgoing_invoices_folder"])
     remote_dir = config["remote_outgoing_invoices_dir"]
+    printer    = config.get("ar_printer")
     for d in local_dirs:
         d.mkdir(parents=True, exist_ok=True)
     logging.info(f"[AR] Ausgangsrechnungen-Download aktiv (alle 10 min) → {', '.join(str(d) for d in local_dirs)}")
+    if printer:
+        logging.info(f"[AR] Drucker: {printer}")
 
     while not stop_event.is_set():
         try:
-            _sftp_download_folder(config, remote_dir, local_dirs, "AR", extensions={".pdf"})
+            _sftp_download_folder(config, remote_dir, local_dirs, "AR", extensions={".pdf"}, printer=printer)
         except Exception as exc:
             logging.error(f"[AR] Unerwarteter Fehler: {exc}")
         stop_event.wait(600)
@@ -354,16 +357,13 @@ def _outgoing_download_loop(config: dict, stop_event: threading.Event):
 def _stb_download_loop(config: dict, stop_event: threading.Event):
     local_dirs = _resolve_dirs(config["local_stb_folder"])
     remote_dir = config["remote_stb_export_dir"]
-    printer    = config.get("stb_printer")
     for d in local_dirs:
         d.mkdir(parents=True, exist_ok=True)
     logging.info(f"[STB] STB-Export-Download aktiv (alle 10 min) → {', '.join(str(d) for d in local_dirs)}")
-    if printer:
-        logging.info(f"[STB] Drucker: {printer}")
 
     while not stop_event.is_set():
         try:
-            _sftp_download_folder(config, remote_dir, local_dirs, "STB", printer=printer)
+            _sftp_download_folder(config, remote_dir, local_dirs, "STB")
         except Exception as exc:
             logging.error(f"[STB] Unerwarteter Fehler: {exc}")
         stop_event.wait(600)
