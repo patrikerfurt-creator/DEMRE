@@ -1,3 +1,7 @@
+# ACHTUNG: Docker umgeht die UFW-Firewall des Servers. Jeder hier unter "ports:"
+# veröffentlichte Port ist weltweit erreichbar, egal was UFW erlaubt.
+# Ports, die nicht öffentlich sein sollen (z.B. Postgres zum Debuggen),
+# immer an localhost binden: "127.0.0.1:5432:5432" statt "5432:5432".
 services:
   db:
     image: postgres:16

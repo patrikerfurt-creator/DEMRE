@@ -257,6 +257,7 @@ docker exec demre-db-1 psql -U demre -d demre -c \
 - **`.env.prod` niemals committen**: Steht in `.gitignore`; Vorlage ist `.env.prod.example`
 - **Migrationen**: Aktueller Stand ist `0005`. Migration `0004` existiert als Stub (bereits in DB angewendet, enthielt `is_direct_debit`-Spalte). Migration `0005` nutzt `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (idempotent).
 - **Watcher + DB-Session**: Jeder Watcher-Job öffnet eine eigene `AsyncSessionLocal`-Session und committed selbst — nicht die Request-Session von FastAPI verwenden.
+- **Docker umgeht UFW (Produktions-Server)**: Docker trägt `ports:`-Mappings direkt in iptables ein — an der UFW-Firewall vorbei. Jeder in `docker-compose.prod.yml` veröffentlichte Port ist damit weltweit erreichbar, auch wenn UFW ihn nicht erlaubt. Deshalb: Ports, die nicht öffentlich sein sollen (z.B. Postgres zum Debuggen), immer an localhost binden: `"127.0.0.1:5432:5432"` statt `"5432:5432"`.
 
 ### Frontend
 - **`crypto.randomUUID()` nur HTTPS**: Auf HTTP (Produktion ohne TLS) nicht verfügbar → `Date.now().toString(36) + Math.random().toString(36).slice(2)` verwenden
