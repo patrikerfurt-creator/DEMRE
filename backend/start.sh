@@ -58,5 +58,14 @@ fi
 echo "Creating default admin if needed..."
 python init_db.py 2>/dev/null || true
 
-echo "Starting server..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Auto-Reload nur in der Entwicklung (UVICORN_RELOAD=1 in docker-compose.yml).
+# Produktion laeuft ohne Reloader — und bewusst als EIN Prozess, da der
+# APScheduler im App-Lifespan haengt: mehrere Worker = mehrere Scheduler
+# = doppelte Rechnungslaeufe und doppelt verarbeitete Eingangsordner.
+if [ "${UVICORN_RELOAD:-0}" = "1" ]; then
+    echo "Starting server (Entwicklung, mit Auto-Reload)..."
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+else
+    echo "Starting server..."
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+fi

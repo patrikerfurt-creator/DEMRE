@@ -24,6 +24,7 @@ services:
       - ./.env
     environment:
       STB_EXPORT_DIR: /app/storage/exports/steuerberater
+      UVICORN_RELOAD: "1"
     volumes:
       - ./backend:/app
       - ./storage:/app/storage
