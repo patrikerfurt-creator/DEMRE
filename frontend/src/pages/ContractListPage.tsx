@@ -115,6 +115,8 @@ function CustomerDrawer({
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50
+
 const EMPTY_FORM = {
   property_ref: '',
   start_date: '',
@@ -128,6 +130,8 @@ export function ContractListPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false)
   const drawerOpenRef = useRef(false)
@@ -135,11 +139,17 @@ export function ContractListPage() {
   const [formData, setFormData] = useState(EMPTY_FORM)
 
   const { data: contracts, isLoading } = useQuery({
-    queryKey: ['contracts', statusFilter],
+    queryKey: ['contracts', statusFilter, search, page],
     queryFn: () =>
       api.get<Contract[]>('/contracts', {
-        params: { status: statusFilter !== 'all' ? statusFilter : undefined, page_size: 100 },
+        params: {
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          search: search || undefined,
+          page,
+          page_size: PAGE_SIZE,
+        },
       }).then((r) => r.data),
+    placeholderData: (prev) => prev,
   })
 
   const createMutation = useMutation({
@@ -195,19 +205,46 @@ export function ContractListPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Abo-Rechnungen</h1>
-          <p className="text-sm text-slate-500 mt-1">{items.length} Abo-Rechnungen</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {items.length} Abo-Rechnungen{items.length === PAGE_SIZE || page > 1 ? ` (Seite ${page})` : ''}
+          </p>
         </div>
         <Button onClick={openDialog}>
           <Plus className="h-4 w-4 mr-2" /> Neue Abo-Rechnung
         </Button>
       </div>
 
-      <div className="flex gap-2">
-        {['all', 'active', 'terminated', 'suspended'].map((s) => (
-          <Button key={s} variant={statusFilter === s ? 'default' : 'outline'} size="sm" onClick={() => setStatusFilter(s)}>
-            {s === 'all' ? 'Alle' : CONTRACT_STATUS_LABELS[s]}
-          </Button>
-        ))}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex gap-2 flex-wrap">
+          {['all', 'active', 'terminated', 'suspended'].map((s) => (
+            <Button
+              key={s}
+              variant={statusFilter === s ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => { setStatusFilter(s); setPage(1) }}
+            >
+              {s === 'all' ? 'Alle' : CONTRACT_STATUS_LABELS[s]}
+            </Button>
+          ))}
+        </div>
+        <div className="relative ml-auto">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+          <Input
+            className="pl-8 w-64"
+            placeholder="Kunde, Abo-Nr., Objekt..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+          />
+          {search && (
+            <button
+              type="button"
+              className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600"
+              onClick={() => { setSearch(''); setPage(1) }}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="border rounded-lg">
@@ -215,7 +252,7 @@ export function ContractListPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Abo-Nr.</TableHead>
-              <TableHead>Kunden-ID</TableHead>
+              <TableHead>Kunde</TableHead>
               <TableHead>Objekt</TableHead>
               <TableHead>Start</TableHead>
               <TableHead>Ende</TableHead>
@@ -235,7 +272,12 @@ export function ContractListPage() {
             ) : items.map((c) => (
               <TableRow key={c.id} className="cursor-pointer" onClick={() => navigate(`/contracts/${c.id}`)}>
                 <TableCell className="font-mono text-sm">{c.contract_number}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{c.customer_id.substring(0, 8)}...</TableCell>
+                <TableCell>
+                  <div className="text-sm text-slate-800">{c.customer_name || '–'}</div>
+                  {c.customer_number && (
+                    <div className="font-mono text-xs text-muted-foreground">{c.customer_number}</div>
+                  )}
+                </TableCell>
                 <TableCell>{c.property_ref || '–'}</TableCell>
                 <TableCell>{formatDate(c.start_date)}</TableCell>
                 <TableCell>{formatDate(c.end_date)}</TableCell>
@@ -249,6 +291,17 @@ export function ContractListPage() {
             ))}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex justify-center gap-2">
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+          Zurück
+        </Button>
+        <span className="py-2 px-3 text-sm">Seite {page}</span>
+        <Button variant="outline" size="sm" disabled={items.length < PAGE_SIZE} onClick={() => setPage(p => p + 1)}>
+          Weiter
+        </Button>
       </div>
 
       {/* Create Dialog */}

@@ -1,12 +1,13 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from datetime import date
 from app.api.deps import get_db, get_current_user, require_not_readonly
 from app.models.user import User
 from app.models.contract import Contract, ContractItem, ContractStatus
+from app.models.customer import Customer
 from app.core.number_generator import generate_contract_number
 from app.schemas.contract import (
     ContractCreate, ContractUpdate, ContractResponse,
@@ -16,17 +17,50 @@ from app.schemas.contract import (
 router = APIRouter(prefix="/contracts", tags=["contracts"])
 
 
+def _customer_name(customer: Optional[Customer]) -> Optional[str]:
+    if not customer:
+        return None
+    if customer.company_name:
+        return customer.company_name
+    name = f"{customer.first_name or ''} {customer.last_name or ''}".strip()
+    return name or None
+
+
+def _to_response(contract: Contract) -> ContractResponse:
+    """ContractResponse inkl. Kundenname — Contract.customer muss eager geladen sein."""
+    response = ContractResponse.model_validate(contract)
+    customer = contract.customer
+    response.customer_name = _customer_name(customer)
+    response.customer_number = customer.customer_number if customer else None
+    return response
+
+
 @router.get("", response_model=List[ContractResponse])
 async def list_contracts(
     customer_id: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     status: Optional[ContractStatus] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(25, ge=1, le=100),
+    page_size: int = Query(25, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    query = select(Contract).options(selectinload(Contract.items))
+    query = select(Contract).options(
+        selectinload(Contract.items), selectinload(Contract.customer)
+    )
 
+    if search:
+        like = f"%{search}%"
+        query = query.join(Customer, Contract.customer_id == Customer.id).where(
+            or_(
+                Contract.contract_number.ilike(like),
+                Contract.property_ref.ilike(like),
+                Customer.customer_number.ilike(like),
+                Customer.company_name.ilike(like),
+                Customer.first_name.ilike(like),
+                Customer.last_name.ilike(like),
+            )
+        )
     if customer_id:
         query = query.where(Contract.customer_id == customer_id)
     if status:
@@ -34,7 +68,7 @@ async def list_contracts(
 
     query = query.order_by(Contract.contract_number).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
-    return [ContractResponse.model_validate(c) for c in result.scalars().all()]
+    return [_to_response(c) for c in result.scalars().all()]
 
 
 @router.post("", response_model=ContractResponse, status_code=201)
@@ -64,10 +98,10 @@ async def create_contract(
 
     await db.flush()
     result = await db.execute(
-        select(Contract).options(selectinload(Contract.items)).where(Contract.id == contract.id)
+        select(Contract).options(selectinload(Contract.items), selectinload(Contract.customer)).where(Contract.id == contract.id)
     )
     contract = result.scalar_one()
-    return ContractResponse.model_validate(contract)
+    return _to_response(contract)
 
 
 @router.get("/{contract_id}", response_model=ContractResponse)
@@ -77,12 +111,12 @@ async def get_contract(
     _: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Contract).options(selectinload(Contract.items)).where(Contract.id == contract_id)
+        select(Contract).options(selectinload(Contract.items), selectinload(Contract.customer)).where(Contract.id == contract_id)
     )
     contract = result.scalar_one_or_none()
     if not contract:
         raise HTTPException(status_code=404, detail="Vertrag nicht gefunden")
-    return ContractResponse.model_validate(contract)
+    return _to_response(contract)
 
 
 @router.put("/{contract_id}", response_model=ContractResponse)
@@ -93,7 +127,7 @@ async def update_contract(
     _: User = Depends(require_not_readonly),
 ):
     result = await db.execute(
-        select(Contract).options(selectinload(Contract.items)).where(Contract.id == contract_id)
+        select(Contract).options(selectinload(Contract.items), selectinload(Contract.customer)).where(Contract.id == contract_id)
     )
     contract = result.scalar_one_or_none()
     if not contract:
@@ -103,8 +137,8 @@ async def update_contract(
         setattr(contract, field, value)
 
     await db.flush()
-    await db.refresh(contract)
-    return ContractResponse.model_validate(contract)
+    await db.refresh(contract, ["items", "customer"])
+    return _to_response(contract)
 
 
 @router.delete("/{contract_id}", status_code=204)
@@ -128,7 +162,7 @@ async def terminate_contract(
     _: User = Depends(require_not_readonly),
 ):
     result = await db.execute(
-        select(Contract).options(selectinload(Contract.items)).where(Contract.id == contract_id)
+        select(Contract).options(selectinload(Contract.items), selectinload(Contract.customer)).where(Contract.id == contract_id)
     )
     contract = result.scalar_one_or_none()
     if not contract:
@@ -141,8 +175,8 @@ async def terminate_contract(
         contract.end_date = date.today()
 
     await db.flush()
-    await db.refresh(contract)
-    return ContractResponse.model_validate(contract)
+    await db.refresh(contract, ["items", "customer"])
+    return _to_response(contract)
 
 
 # Contract items endpoints

@@ -119,6 +119,8 @@ export interface Contract {
   id: string
   contract_number: string
   customer_id: string
+  customer_name?: string
+  customer_number?: string
   property_ref?: string
   start_date?: string
   end_date?: string

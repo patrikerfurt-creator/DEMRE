@@ -80,6 +80,8 @@ class ContractUpdate(BaseModel):
 class ContractResponse(ContractBase):
     id: UUID
     created_by: Optional[UUID] = None
+    customer_name: Optional[str] = None
+    customer_number: Optional[str] = None
     items: List[ContractItemResponse] = []
     created_at: datetime
     updated_at: datetime
