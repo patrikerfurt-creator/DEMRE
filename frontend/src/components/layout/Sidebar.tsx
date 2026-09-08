@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Package, FileText, Receipt,
-  Download, Settings, LogOut, TrendingDown, FileInput, Wallet, FilePlus, UserCog
+  Download, Settings, LogOut, TrendingDown, FileInput, Wallet, FilePlus, FileMinus, UserCog
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
@@ -13,6 +13,7 @@ const debitorenItems = [
   { to: '/contracts', label: 'Abo-Rechnungen', icon: FileText },
   { to: '/invoices', label: 'Rechnungen', icon: Receipt, end: true },
   { to: '/invoices/new', label: 'Rechnung erstellen', icon: FilePlus },
+  { to: '/credit-notes', label: 'Gutschriften', icon: FileMinus, end: true },
 ]
 
 const kreditorenItems = [

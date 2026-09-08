@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, FileCode, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Download, FileCode, FileMinus, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import api from '@/lib/api'
 import type { Invoice, InvoiceItem, InvoiceStatus } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -12,16 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from '@/hooks/use-toast'
-import { formatDate, formatCurrency, INVOICE_STATUS_LABELS, INVOICE_STATUS_COLORS } from '@/lib/utils'
-
-const ALLOWED_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
-  draft:     ['issued'],
-  issued:    ['sent', 'paid', 'overdue', 'cancelled'],
-  sent:      ['paid', 'overdue', 'cancelled'],
-  overdue:   ['paid', 'cancelled'],
-  paid:      [],
-  cancelled: [],
-}
+import {
+  formatDate, formatCurrency, formatApiError, allowedTransitions,
+  INVOICE_STATUS_LABELS, INVOICE_STATUS_COLORS, DOCUMENT_TEXTS,
+} from '@/lib/utils'
 
 const EMPTY_ITEM_FORM = {
   description: '',
@@ -53,6 +47,8 @@ export function InvoiceDetailPage() {
   const [itemDialogOpen, setItemDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<InvoiceItem | null>(null)
   const [itemForm, setItemForm] = useState(EMPTY_ITEM_FORM)
+  const [creditDialogOpen, setCreditDialogOpen] = useState(false)
+  const [creditReason, setCreditReason] = useState('')
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['invoice', id],
@@ -68,7 +64,26 @@ export function InvoiceDetailPage() {
       toast({ title: 'Status aktualisiert' })
     },
     onError: (err: any) => {
-      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+      toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' })
+    },
+  })
+
+  const creditNoteMutation = useMutation({
+    mutationFn: (reason: string) =>
+      api.post<Invoice>(`/invoices/${id}/credit-note`, { credit_reason: reason }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      setCreditDialogOpen(false)
+      setCreditReason('')
+      toast({
+        title: `Gutschrift ${res.data.invoice_number} als Entwurf erstellt`,
+        description: 'Positionen sind noch änderbar. Beim Ausstellen wird die Rechnung storniert.',
+      })
+      navigate(`/credit-notes/${res.data.id}`)
+    },
+    onError: (err: any) => {
+      toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -85,7 +100,7 @@ export function InvoiceDetailPage() {
       toast({ title: editingItem ? 'Position aktualisiert' : 'Position hinzugefügt' })
     },
     onError: (err: any) => {
-      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+      toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -97,7 +112,7 @@ export function InvoiceDetailPage() {
       toast({ title: 'Position gelöscht' })
     },
     onError: (err: any) => {
-      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+      toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -179,7 +194,17 @@ export function InvoiceDetailPage() {
   }
 
   if (isLoading) return <div className="p-6 text-muted-foreground">Lädt...</div>
-  if (!invoice) return <div className="p-6 text-muted-foreground">Rechnung nicht gefunden</div>
+  if (!invoice) return <div className="p-6 text-muted-foreground">Beleg nicht gefunden</div>
+
+  const documentType = invoice.document_type ?? 'invoice'
+  const isCreditNote = documentType === 'credit_note'
+  const texts = DOCUMENT_TEXTS[documentType]
+  const transitions = allowedTransitions(documentType, invoice.status)
+  // Gutschrift nur zu einer ausgestellten Rechnung, die noch keine hat
+  const canCreateCreditNote =
+    !isCreditNote &&
+    !invoice.credit_note &&
+    ['issued', 'sent', 'paid', 'overdue'].includes(invoice.status)
 
   const isDraft = invoice.status === 'draft'
   const subtotal = parseFloat(invoice.subtotal_net)
@@ -199,12 +224,37 @@ export function InvoiceDetailPage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/invoices')}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate(isCreditNote ? '/credit-notes' : '/invoices')}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{invoice.invoice_number}</h1>
-          <p className="text-sm text-slate-500">Rechnung vom {formatDate(invoice.invoice_date)}</p>
+          <p className="text-sm text-slate-500">
+            {texts.singular} vom {formatDate(invoice.invoice_date)}
+          </p>
+          {isCreditNote && invoice.credit_note_of_id && (
+            <button
+              type="button"
+              className="text-sm text-blue-600 hover:underline"
+              onClick={() => navigate(`/invoices/${invoice.credit_note_of_id}`)}
+            >
+              Gutschrift zu Rechnung {invoice.credit_note_of_number ?? ''}
+            </button>
+          )}
+          {!isCreditNote && invoice.credit_note && (
+            <button
+              type="button"
+              className="text-sm text-blue-600 hover:underline"
+              onClick={() => navigate(`/credit-notes/${invoice.credit_note!.id}`)}
+            >
+              {invoice.status === 'cancelled' ? 'Storniert durch' : 'Gutschrift (Entwurf):'}{' '}
+              Gutschrift {invoice.credit_note.invoice_number}
+            </button>
+          )}
         </div>
         <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium ${INVOICE_STATUS_COLORS[invoice.status]}`}>
           {INVOICE_STATUS_LABELS[invoice.status]}
@@ -218,14 +268,14 @@ export function InvoiceDetailPage() {
           <Select
             value={invoice.status}
             onValueChange={(v) => statusMutation.mutate(v as InvoiceStatus)}
-            disabled={statusMutation.isPending || ALLOWED_TRANSITIONS[invoice.status].length === 0}
+            disabled={statusMutation.isPending || transitions.length === 0}
           >
             <SelectTrigger className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={invoice.status}>{INVOICE_STATUS_LABELS[invoice.status]}</SelectItem>
-              {ALLOWED_TRANSITIONS[invoice.status].map((s) => (
+              {transitions.map((s) => (
                 <SelectItem key={s} value={s}>{INVOICE_STATUS_LABELS[s]}</SelectItem>
               ))}
             </SelectContent>
@@ -237,20 +287,34 @@ export function InvoiceDetailPage() {
         <Button variant="outline" size="sm" onClick={downloadXml}>
           <FileCode className="h-4 w-4 mr-2" /> ZUGFeRD XML
         </Button>
+        {canCreateCreditNote && (
+          <Button variant="outline" size="sm" onClick={() => setCreditDialogOpen(true)}>
+            <FileMinus className="h-4 w-4 mr-2" /> Gutschrift erstellen
+          </Button>
+        )}
       </div>
 
       {/* Metadata */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4">
-            <div className="text-xs text-muted-foreground">Rechnungsdatum</div>
+            <div className="text-xs text-muted-foreground">{texts.dateLabel}</div>
             <div className="font-medium">{formatDate(invoice.invoice_date)}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="text-xs text-muted-foreground">Fälligkeitsdatum</div>
-            <div className="font-medium">{formatDate(invoice.due_date)}</div>
+            {isCreditNote ? (
+              <>
+                <div className="text-xs text-muted-foreground">Gutschriftsgrund</div>
+                <div className="font-medium text-sm">{invoice.credit_reason || '–'}</div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-muted-foreground">Fälligkeitsdatum</div>
+                <div className="font-medium">{formatDate(invoice.due_date)}</div>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -274,7 +338,7 @@ export function InvoiceDetailPage() {
       {/* Line items */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base">Rechnungspositionen</CardTitle>
+          <CardTitle className="text-base">{texts.itemsTitle}</CardTitle>
           {isDraft && (
             <Button size="sm" onClick={openAddItem}>
               <Plus className="h-4 w-4 mr-2" /> Position hinzufügen
@@ -349,7 +413,7 @@ export function InvoiceDetailPage() {
             </div>
           ))}
           <div className="border-t pt-2 flex justify-between font-semibold text-base">
-            <span>Rechnungsbetrag brutto</span>
+            <span>{texts.totalLabel}</span>
             <span>{formatCurrency(gross)}</span>
           </div>
         </div>
@@ -374,6 +438,46 @@ export function InvoiceDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Gutschrift erstellen */}
+      <Dialog open={creditDialogOpen} onOpenChange={setCreditDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Gutschrift zu Rechnung {invoice.invoice_number}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Es werden alle {invoice.items.length} Positionen über{' '}
+              {formatCurrency(gross)} übernommen. Die Gutschrift entsteht als
+              Entwurf – Positionen kannst du dort noch ändern oder löschen.
+              Beim Ausstellen einer vollen Gutschrift wird diese Rechnung
+              automatisch storniert.
+            </p>
+            <div>
+              <Label htmlFor="credit-reason">Gutschriftsgrund *</Label>
+              <textarea
+                id="credit-reason"
+                className="mt-1 w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="z.B. Leistung wurde nicht erbracht"
+                value={creditReason}
+                onChange={(e) => setCreditReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreditDialogOpen(false)}>
+              Abbrechen
+            </Button>
+            <Button
+              disabled={!creditReason.trim() || creditNoteMutation.isPending}
+              onClick={() => creditNoteMutation.mutate(creditReason.trim())}
+            >
+              {creditNoteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Gutschrift erstellen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Item Edit Dialog (draft only) */}
       <Dialog open={itemDialogOpen} onOpenChange={(open) => { setItemDialogOpen(open); if (!open) setEditingItem(null) }}>

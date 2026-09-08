@@ -3,7 +3,7 @@ from app.models.user import User
 from app.models.customer import Customer
 from app.models.article import Article
 from app.models.contract import Contract, ContractItem
-from app.models.invoice import Invoice, InvoiceItem
+from app.models.invoice import Invoice, InvoiceItem, InvoiceStatus, DocumentType
 from app.models.payment_run import PaymentRun
 from app.models.status_change_log import StatusChangeLog
 
@@ -17,6 +17,8 @@ __all__ = [
     "ContractItem",
     "Invoice",
     "InvoiceItem",
+    "InvoiceStatus",
+    "DocumentType",
     "PaymentRun",
     "StatusChangeLog",
 ]

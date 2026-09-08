@@ -73,3 +73,19 @@ async def generate_invoice_number(db: AsyncSession) -> str:
     )
     result = await db.execute(text(f"SELECT nextval('{seq_name}')"))
     return f"{year}-{result.scalar():04d}"
+
+
+async def generate_credit_note_number(db: AsyncSession) -> str:
+    """
+    Generate a gapless credit note number using a PostgreSQL sequence.
+    Format: GS-YYYY-NNNN (z. B. GS-2026-0001).
+    Eigener Nummernkreis, getrennt von den Rechnungsnummern; Reset pro Jahr.
+    """
+    year = date.today().year
+    seq_name = f"credit_note_num_{year}"
+
+    await db.execute(
+        text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name} START 1")
+    )
+    result = await db.execute(text(f"SELECT nextval('{seq_name}')"))
+    return f"GS-{year}-{result.scalar():04d}"

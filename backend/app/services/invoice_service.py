@@ -7,7 +7,7 @@ from sqlalchemy import select, extract
 from sqlalchemy.orm import selectinload
 
 from app.models.contract import Contract, ContractItem, ContractStatus, BillingPeriod
-from app.models.invoice import Invoice, InvoiceItem, InvoiceStatus
+from app.models.invoice import Invoice, InvoiceItem, InvoiceStatus, DocumentType
 from app.models.article import Article
 from app.core.number_generator import generate_invoice_number
 
@@ -96,6 +96,7 @@ class InvoiceService:
                 .where(Invoice.contract_id == contract.id)
                 .where(extract("year", Invoice.invoice_date) == current_year)
                 .where(Invoice.status != InvoiceStatus.cancelled)
+                .where(Invoice.document_type == DocumentType.invoice)
                 .where(InvoiceItem.article_id.isnot(None))
             )
             annual_billed_article_ids = {row[0] for row in billed_result.all()}
@@ -110,6 +111,7 @@ class InvoiceService:
                 .where(Invoice.billing_period_from == period_from)
                 .where(Invoice.billing_period_to == period_to)
                 .where(Invoice.status != InvoiceStatus.cancelled)
+                .where(Invoice.document_type == DocumentType.invoice)
                 .where(InvoiceItem.article_id.isnot(None))
             )
             period_billed_article_ids = {row[0] for row in period_result.all()}

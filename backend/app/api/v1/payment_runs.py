@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_
 from datetime import datetime, timezone
 import os
 import uuid
@@ -10,7 +10,7 @@ import uuid
 from app.api.deps import get_db, get_current_user, require_not_readonly
 from app.models.user import User
 from app.models.payment_run import PaymentRun, RunType, RunStatus
-from app.models.invoice import Invoice, InvoiceStatus
+from app.models.invoice import Invoice, InvoiceStatus, DocumentType
 from app.schemas.payment_run import PaymentRunResponse, SepaExportRequest, DatevExportRequest
 from app.services.sepa_service import SepaService
 from app.services.datev_service import DatevService
@@ -118,10 +118,28 @@ async def create_datev_export(
     if data.invoice_ids:
         query = query.where(Invoice.id.in_(data.invoice_ids))
     else:
+        # Stornierte Rechnungen bleiben draussen - ausser sie wurden per
+        # Gutschrift storniert. Sonst stuende die Haben-Buchung der Gutschrift
+        # ohne die zugehoerige Soll-Buchung im Stapel, wenn beides im selben
+        # Zeitraum passiert ist.
+        credited_invoice_ids = (
+            select(Invoice.credit_note_of_id)
+            .where(Invoice.document_type == DocumentType.credit_note)
+            .where(Invoice.credit_note_of_id.isnot(None))
+            .where(Invoice.status != InvoiceStatus.draft)
+        )
         query = query.where(
             Invoice.invoice_date >= data.period_from,
             Invoice.invoice_date <= data.period_to,
-            Invoice.status.in_([InvoiceStatus.issued, InvoiceStatus.sent, InvoiceStatus.paid]),
+            or_(
+                Invoice.status.in_(
+                    [InvoiceStatus.issued, InvoiceStatus.sent, InvoiceStatus.paid]
+                ),
+                and_(
+                    Invoice.status == InvoiceStatus.cancelled,
+                    Invoice.id.in_(credited_invoice_ids),
+                ),
+            ),
         )
 
     result = await db.execute(query)
@@ -135,7 +153,13 @@ async def create_datev_export(
         period_to=data.period_to,
         started_at=datetime.now(timezone.utc),
         invoice_count=len(invoices),
-        total_amount=sum(inv.total_gross for inv in invoices) if invoices else 0,
+        # Gutschriften mindern den exportierten Umsatz
+        total_amount=sum(
+            -inv.total_gross
+            if inv.document_type == DocumentType.credit_note
+            else inv.total_gross
+            for inv in invoices
+        ) if invoices else 0,
     )
     db.add(run)
     await db.flush()

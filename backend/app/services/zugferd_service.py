@@ -11,16 +11,99 @@ import os
 from app.config import settings
 
 
+def _is_credit_note(invoice) -> bool:
+    """Gutschrift oder Rechnung?
+
+    Ueber getattr/value statt Import von DocumentType, damit der Service
+    ohne Model-Abhaengigkeit auch mit einfachen Objekten arbeitet.
+    """
+    doc_type = getattr(invoice, "document_type", None)
+    return getattr(doc_type, "value", doc_type) == "credit_note"
+
+
+# Textbausteine je Belegart (PDF + XML)
+_DOC_TEXTS = {
+    False: {
+        "title": "RECHNUNG",
+        "type_code": "380",
+        "number_label": "Rechnungsnummer:",
+        "date_label": "Rechnungsdatum:",
+        "intro": "wir erlauben uns, folgende Leistungen in Rechnung zu stellen:",
+        "total_label": "Rechnungsbetrag brutto:",
+    },
+    True: {
+        "title": "GUTSCHRIFT",
+        "type_code": "381",
+        "number_label": "Gutschriftsnummer:",
+        "date_label": "Gutschriftsdatum:",
+        "intro": "wir schreiben Ihnen folgende Leistungen gut:",
+        "total_label": "Gutschriftsbetrag brutto:",
+    },
+}
+
+
+def _doc_texts(invoice) -> dict:
+    return _DOC_TEXTS[_is_credit_note(invoice)]
+
+
 class ZugferdService:
 
     def build_xml(self, invoice) -> bytes:
         """Build ZUGFeRD EN16931 XML using drafthorse."""
         try:
-            return self._build_xml_drafthorse(invoice)
-        except Exception as e:
+            xml_bytes = self._build_xml_drafthorse(invoice)
+        except Exception:
             import traceback
             traceback.print_exc()
-            return self._build_xml_manual(invoice)
+            xml_bytes = self._build_xml_manual(invoice)
+
+        # BT-25: Bezug auf die gutgeschriebene Rechnung
+        if _is_credit_note(invoice) and getattr(invoice, "credit_note_of", None):
+            try:
+                xml_bytes = self._add_invoice_reference_to_xml(
+                    xml_bytes, invoice.credit_note_of
+                )
+            except Exception:
+                import traceback
+                traceback.print_exc()
+        return xml_bytes
+
+    def _add_invoice_reference_to_xml(self, xml_bytes: bytes, source_invoice) -> bytes:
+        """Fuegt BT-25 (InvoiceReferencedDocument) in die CII-XML ein.
+
+        Nachbearbeitung per lxml, damit es unabhaengig von der drafthorse-Version
+        funktioniert und auch fuer das manuell gebaute Fallback-XML greift.
+        """
+        from lxml import etree
+
+        NS_RAM = "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+        NS_QDT = "urn:un:unece:uncefact:data:standard:QualifiedDataType:100"
+
+        root = etree.fromstring(xml_bytes)
+        settlement = root.find(f".//{{{NS_RAM}}}ApplicableHeaderTradeSettlement")
+        if settlement is None:
+            return xml_bytes
+
+        ref = etree.Element(f"{{{NS_RAM}}}InvoiceReferencedDocument")
+        issuer = etree.SubElement(ref, f"{{{NS_RAM}}}IssuerAssignedID")
+        issuer.text = source_invoice.invoice_number
+        if source_invoice.invoice_date:
+            formatted = etree.SubElement(ref, f"{{{NS_RAM}}}FormattedIssueDateTime")
+            date_str = etree.SubElement(formatted, f"{{{NS_QDT}}}DateTimeString")
+            date_str.set("format", "102")
+            date_str.text = source_invoice.invoice_date.strftime("%Y%m%d")
+
+        # CII-Schema-Reihenfolge: InvoiceReferencedDocument steht direkt
+        # hinter SpecifiedTradeSettlementHeaderMonetarySummation
+        summation = settlement.find(
+            f"{{{NS_RAM}}}SpecifiedTradeSettlementHeaderMonetarySummation"
+        )
+        if summation is not None:
+            summation.addnext(ref)
+        else:
+            settlement.append(ref)
+
+        return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
     def _build_xml_drafthorse(self, invoice) -> bytes:
         """Build using drafthorse library."""
@@ -33,9 +116,10 @@ class ZugferdService:
         doc.context.guideline_id.id = (
             "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:en16931"
         )
+        texts = _doc_texts(invoice)
         doc.header.id.id = invoice.invoice_number
-        doc.header.type_code.value = "380"
-        doc.header.name.value = "RECHNUNG"
+        doc.header.type_code.value = texts["type_code"]
+        doc.header.name.value = texts["title"]
         doc.header.issue_date_time.date = invoice.invoice_date
 
         # Seller
@@ -69,8 +153,8 @@ class ZugferdService:
 
         doc.trade.settlement.currency_code.value = invoice.currency or "EUR"
 
-        # Payment terms
-        if invoice.due_date:
+        # Payment terms - eine Gutschrift wird nicht faellig
+        if invoice.due_date and not _is_credit_note(invoice):
             terms = doc.trade.settlement.payment_terms.add()
             terms.due.date = invoice.due_date
 
@@ -145,6 +229,14 @@ class ZugferdService:
 
         inv_date = invoice.invoice_date.strftime("%Y%m%d") if invoice.invoice_date else ""
         due_date = invoice.due_date.strftime("%Y%m%d") if invoice.due_date else ""
+        texts = _doc_texts(invoice)
+
+        # Eine Gutschrift wird nicht faellig
+        payment_terms = "" if _is_credit_note(invoice) else f"""<ram:SpecifiedTradePaymentTerms>
+        <ram:DueDateDateTime>
+          <udt:DateTimeString format="102">{due_date}</udt:DateTimeString>
+        </ram:DueDateDateTime>
+      </ram:SpecifiedTradePaymentTerms>"""
 
         # VAT groups
         vat_groups: dict = {}
@@ -211,7 +303,8 @@ class ZugferdService:
   </rsm:ExchangedDocumentContext>
   <rsm:ExchangedDocument>
     <ram:ID>{invoice.invoice_number}</ram:ID>
-    <ram:TypeCode>380</ram:TypeCode>
+    <ram:Name>{texts['title']}</ram:Name>
+    <ram:TypeCode>{texts['type_code']}</ram:TypeCode>
     <ram:IssueDateTime>
       <udt:DateTimeString format="102">{inv_date}</udt:DateTimeString>
     </ram:IssueDateTime>
@@ -236,11 +329,7 @@ class ZugferdService:
     <ram:ApplicableHeaderTradeSettlement>
       <ram:InvoiceCurrencyCode>{invoice.currency}</ram:InvoiceCurrencyCode>
       {vat_lines}
-      <ram:SpecifiedTradePaymentTerms>
-        <ram:DueDateDateTime>
-          <udt:DateTimeString format="102">{due_date}</udt:DateTimeString>
-        </ram:DueDateDateTime>
-      </ram:SpecifiedTradePaymentTerms>
+      {payment_terms}
       <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
         <ram:LineTotalAmount currencyID="{invoice.currency}">{invoice.subtotal_net:.2f}</ram:LineTotalAmount>
         <ram:TaxBasisTotalAmount currencyID="{invoice.currency}">{invoice.subtotal_net:.2f}</ram:TaxBasisTotalAmount>
@@ -269,6 +358,10 @@ class ZugferdService:
         BOT_MARGIN   = 2.5 * cm
 
         logo_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'logo.jpg')
+
+        is_credit_note = _is_credit_note(invoice)
+        texts = _doc_texts(invoice)
+        source_invoice = getattr(invoice, "credit_note_of", None) if is_credit_note else None
 
         # ── Canvas-Callback: Header (Seite 1) + Footer (alle Seiten) ──
         def draw_header_footer(canvas, doc):
@@ -304,10 +397,10 @@ class ZugferdService:
                     canvas.drawString(info_x, info_y, text)
                     info_y -= 10   # ~3.5 mm Zeilenabstand
 
-                # "RECHNUNG" links oben
+                # Belegart ("RECHNUNG" / "GUTSCHRIFT") links oben
                 canvas.setFont("Helvetica-Bold", 20)
                 canvas.setFillColor(colors.HexColor("#1a365d"))
-                canvas.drawString(LEFT_MARGIN, PAGE_H - 2.0 * cm - 16, "RECHNUNG")
+                canvas.drawString(LEFT_MARGIN, PAGE_H - 2.0 * cm - 16, texts["title"])
 
             # --- Footer (alle Seiten) ---
             footer_y  = 1.5 * cm
@@ -382,10 +475,19 @@ class ZugferdService:
             return ""
 
         meta_data = [
-            ["Rechnungsnummer:", invoice.invoice_number],
-            ["Rechnungsdatum:", fmt_date(invoice.invoice_date)],
-            ["Fälligkeitsdatum:", fmt_date(invoice.due_date)],
+            [texts["number_label"], invoice.invoice_number],
+            [texts["date_label"], fmt_date(invoice.invoice_date)],
         ]
+        if is_credit_note:
+            # Eine Gutschrift hat keine Zahlungsfrist, aber einen Rechnungsbezug
+            if source_invoice:
+                meta_data.append([
+                    "Bezug:",
+                    f"Rechnung {source_invoice.invoice_number} "
+                    f"vom {fmt_date(source_invoice.invoice_date)}",
+                ])
+        else:
+            meta_data.append(["Fälligkeitsdatum:", fmt_date(invoice.due_date)])
         if invoice.billing_period_from and invoice.billing_period_to:
             meta_data.append([
                 "Leistungszeitraum:",
@@ -404,10 +506,7 @@ class ZugferdService:
 
         story.append(Paragraph("Sehr geehrte Damen und Herren,", normal_style))
         story.append(Spacer(1, 3 * mm))
-        story.append(Paragraph(
-            "wir erlauben uns, folgende Leistungen in Rechnung zu stellen:",
-            normal_style
-        ))
+        story.append(Paragraph(texts["intro"], normal_style))
         story.append(Spacer(1, 4 * mm))
 
         # ── Items table ──
@@ -490,7 +589,7 @@ class ZugferdService:
                 fmt_cur(group["vat"]),
             ])
         summary_data.append(["", ""])
-        summary_data.append(["Rechnungsbetrag brutto:", fmt_cur(invoice.total_gross)])
+        summary_data.append([texts["total_label"], fmt_cur(invoice.total_gross)])
 
         summary_table = Table(summary_data, colWidths=[10.5 * cm, 3 * cm], hAlign="RIGHT")
         summary_table.setStyle(TableStyle([
@@ -509,30 +608,43 @@ class ZugferdService:
         # ── Payment info ──
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#cbd5e0")))
         story.append(Spacer(1, 3 * mm))
-        story.append(Paragraph(
-            f"Bitte überweisen Sie den Betrag von <b>{fmt_cur(invoice.total_gross)}</b> "
-            f"bis zum <b>{fmt_date(invoice.due_date)}</b> auf folgendes Konto:",
-            normal_style
-        ))
-        story.append(Spacer(1, 3 * mm))
+        if is_credit_note:
+            story.append(Paragraph(
+                f"Der Betrag von <b>{fmt_cur(invoice.total_gross)}</b> wird Ihnen "
+                f"erstattet bzw. mit der nächsten Rechnung verrechnet.",
+                normal_style
+            ))
+            if invoice.credit_reason:
+                story.append(Spacer(1, 3 * mm))
+                story.append(Paragraph(
+                    f"<b>Grund der Gutschrift:</b> {invoice.credit_reason}",
+                    normal_style
+                ))
+        else:
+            story.append(Paragraph(
+                f"Bitte überweisen Sie den Betrag von <b>{fmt_cur(invoice.total_gross)}</b> "
+                f"bis zum <b>{fmt_date(invoice.due_date)}</b> auf folgendes Konto:",
+                normal_style
+            ))
+            story.append(Spacer(1, 3 * mm))
 
-        bank_info = [["Empfänger:", settings.company_name]]
-        if settings.company_iban:
-            bank_info.append(["IBAN:", settings.company_iban])
-        if settings.company_bic:
-            bank_info.append(["BIC:", settings.company_bic])
-        if settings.company_bank_name:
-            bank_info.append(["Bank:", settings.company_bank_name])
-        bank_info.append(["Verwendungszweck:", invoice.invoice_number])
+            bank_info = [["Empfänger:", settings.company_name]]
+            if settings.company_iban:
+                bank_info.append(["IBAN:", settings.company_iban])
+            if settings.company_bic:
+                bank_info.append(["BIC:", settings.company_bic])
+            if settings.company_bank_name:
+                bank_info.append(["Bank:", settings.company_bank_name])
+            bank_info.append(["Verwendungszweck:", invoice.invoice_number])
 
-        if len(bank_info) > 1:
-            bank_table = Table(bank_info, colWidths=[3.5 * cm, 10 * cm])
-            bank_table.setStyle(TableStyle([
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ]))
-            story.append(bank_table)
+            if len(bank_info) > 1:
+                bank_table = Table(bank_info, colWidths=[3.5 * cm, 10 * cm])
+                bank_table.setStyle(TableStyle([
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]))
+                story.append(bank_table)
 
         if invoice.notes:
             story.append(Spacer(1, 4 * mm))

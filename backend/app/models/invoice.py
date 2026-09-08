@@ -18,6 +18,11 @@ class InvoiceStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
+class DocumentType(str, enum.Enum):
+    invoice = "invoice"
+    credit_note = "credit_note"
+
+
 class Invoice(Base, TimestampMixin):
     __tablename__ = "invoices"
 
@@ -25,6 +30,12 @@ class Invoice(Base, TimestampMixin):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     invoice_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    document_type: Mapped[DocumentType] = mapped_column(
+        SAEnum(DocumentType, name="documenttype"),
+        nullable=False,
+        default=DocumentType.invoice,
+        index=True,
+    )
     contract_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("contracts.id"), nullable=True
     )
@@ -54,11 +65,23 @@ class Invoice(Base, TimestampMixin):
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
+    # Gutschriften: Verweis auf die Rechnung, die gutgeschrieben wird
+    credit_note_of_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=True, index=True
+    )
+    credit_reason: Mapped[Optional[str]] = mapped_column(Text)
+
     customer: Mapped["Customer"] = relationship("Customer", back_populates="invoices", lazy="select")
     contract: Mapped[Optional["Contract"]] = relationship("Contract", back_populates="invoices", lazy="select")
     items: Mapped[list["InvoiceItem"]] = relationship(
         "InvoiceItem", back_populates="invoice", cascade="all, delete-orphan", lazy="select",
         order_by="InvoiceItem.position"
+    )
+    credit_note_of: Mapped[Optional["Invoice"]] = relationship(
+        "Invoice", remote_side=[id], back_populates="credit_notes", lazy="select"
+    )
+    credit_notes: Mapped[list["Invoice"]] = relationship(
+        "Invoice", back_populates="credit_note_of", lazy="select"
     )
 
 

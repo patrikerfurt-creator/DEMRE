@@ -182,6 +182,8 @@ Jede Staging-Datei `YYYYMMDD_HHMMSS_originalname.pdf` bekommt eine gleichnamige 
 | GET/POST | `/api/v1/invoices` | Ausgangsrechnungen |
 | POST | `/api/v1/invoices/generate` | Rechnungslauf (period_from, period_to, auto_issue) |
 | PUT | `/api/v1/invoices/{id}` | Rechnung bearbeiten (**nur Status `draft`**) |
+| POST | `/api/v1/invoices/{id}/credit-note` | Vollgutschrift zur Rechnung (Entwurf) |
+| GET | `/api/v1/invoices?document_type=` | `invoice` (Standard) \| `credit_note` \| `all` |
 | POST/PUT/DELETE | `/api/v1/invoices/{id}/items/{item_id}` | Positionen (**nur `draft`**) |
 | GET/POST | `/api/v1/contracts` | Abo-Rechnungen/Verträge |
 | GET | `/api/v1/invoices/{id}/pdf` | PDF herunterladen |
@@ -214,6 +216,65 @@ curl -X POST http://localhost:8000/api/v1/invoices/generate \
   -H "Content-Type: application/json" \
   -d '{"period_from":"2026-03-01","period_to":"2026-03-31","auto_issue":true}'
 ```
+
+---
+
+## Gutschriften (Kaufmännische Gutschrift, ZUGFeRD 381)
+
+Gutschriften liegen in **derselben `invoices`-Tabelle** wie Rechnungen; unterschieden wird über
+`document_type` (`invoice` | `credit_note`). Beträge werden **positiv** gespeichert — die
+Vorzeichenwirkung ergibt sich aus dem Dokumenttyp, nicht aus negativen Zahlen (EN16931-konform
+für TypeCode 381).
+
+| Aspekt | Rechnung | Gutschrift |
+|---|---|---|
+| Nummernkreis | `YYYY-NNNN` (Sequenz `invoice_num_{year}`) | `GS-YYYY-NNNN` (Sequenz `credit_note_num_{year}`) |
+| ZUGFeRD TypeCode | 380 | 381 + BT-25 `InvoiceReferencedDocument` |
+| PDF-Überschrift | RECHNUNG | GUTSCHRIFT (Bezugszeile + Gutschriftsgrund, kein Bankblock) |
+| Status `overdue` | ja | nein (eigener Automat `_ALLOWED_TRANSITIONS_CREDIT_NOTE`) |
+| Direkt stornierbar | **nein** (nur per Gutschrift) | ja (hebt den Auto-Storno wieder auf) |
+| DATEV Soll/Haben | `S` | `H` (Erlösminderung, Betrag immer positiv) |
+
+### Zwei Anlegewege
+1. **Vollgutschrift zur Rechnung** — `POST /invoices/{id}/credit-note` mit `credit_reason`.
+   Übernimmt alle Positionen als **Entwurf**. Nur aus `issued/sent/paid/overdue`, und nur eine
+   nicht-stornierte Gutschrift pro Rechnung.
+2. **Freie Gutschrift** — `POST /invoices` mit `document_type=credit_note` und `credit_reason`
+   (Frontend: `/credit-notes/new`). Ohne Rechnungsbezug, z.B. Kulanz.
+
+**Teilgutschrift** hat keinen eigenen Dialog: die Gutschrift entsteht als Entwurf, dort lassen sich
+Positionen über die normalen Item-Endpunkte löschen/kürzen.
+
+### Kein direktes Storno von Rechnungen
+`_ALLOWED_TRANSITIONS` enthält für Rechnungen **kein** `cancelled` — der Statuswechsel wird mit
+HTTP 400 und dem Hinweis auf die Gutschrift abgelehnt. Eine ausgestellte Rechnung wird
+ausschließlich durch eine Gutschrift aufgehoben; ein Storno ohne Beleg wäre gegenüber Kunde und
+Steuerberater nicht nachvollziehbar und ließe die Soll-Buchung im DATEV-Stapel ohne Gegenbuchung.
+Den Status setzt nur noch `_cancel_credited_invoice()` selbst — die Map wird dabei nicht durchlaufen.
+
+### Auto-Storno beim Ausstellen
+Wechselt eine Gutschrift auf `issued` und stimmt ihr `total_gross` mit dem der Ursprungsrechnung
+überein, wird die Rechnung automatisch auf `cancelled` gesetzt (`cancelled_at`, Eintrag in
+`status_change_log` mit Hinweis auf die Gutschriftsnummer) und ihre PDF-Kopie aus
+`storage/invoices/outgoing_export/` entfernt. Bei abweichender Summe (Teilgutschrift) bleibt die
+Rechnung unverändert.
+
+### Storno der Gutschrift hebt den Auto-Storno auf
+Wird eine ausgestellte Gutschrift storniert, setzt `_restore_credited_invoice()` die Rechnung auf
+ihren Status **vor** dem Auto-Storno zurück (aus `status_change_log` gelesen, Fallback `issued`),
+räumt `cancelled_at` und legt die PDF-Kopie wieder in `outgoing_export/`. Ohne das bliebe die
+Rechnung storniert, obwohl es keine gültige Gutschrift mehr gibt — und da stornierte Rechnungen
+nicht gutgeschrieben werden können (`_CREDITABLE_STATUSES`), wäre sie dauerhaft blockiert.
+
+### Fallstricke
+- **`GET /invoices` filtert standardmäßig `document_type=invoice`** — Dashboard und Rechnungsliste
+  sehen dadurch keine Gutschriften. Wer beides braucht, muss `document_type=all` setzen.
+- **Doppellaufschutz** in `invoice_service.py` filtert auf `document_type == invoice`, sonst würde
+  eine Gutschrift mit `article_id` den nächsten Rechnungslauf blockieren.
+- **`credit_note_of` ist `lazy="select"`** — PDF/XML brauchen die Ursprungsrechnung für BT-25;
+  `_load_document_relations()` in `invoices.py` lädt sie (im Async-Kontext kein Lazy-Load möglich).
+- **Frontend teilt die Seiten**: `InvoiceListPage`, `InvoiceCreatePage` und `InvoiceDetailPage`
+  bedienen über die Prop `documentType` bzw. `invoice.document_type` beide Belegarten.
 
 ---
 
@@ -255,7 +316,7 @@ docker exec demre-db-1 psql -U demre -d demre -c \
 - **Docker Compose `env_file` vs YAML-Interpolation**: `env_file` lädt Variablen in den Container, aber `${VAR}` im YAML wird aus der Host-Umgebung gelesen — deshalb keine `${POSTGRES_USER}` im Healthcheck verwenden, sondern Werte hardcoden
 - **`start.sh` DB-Verbindung**: Nutzt `os.environ.get('POSTGRES_PASSWORD', '')` — `POSTGRES_PASSWORD` muss explizit in `backend/.env` gesetzt sein, auch wenn das Passwort bereits in `DATABASE_URL` steht
 - **`.env.prod` niemals committen**: Steht in `.gitignore`; Vorlage ist `.env.prod.example`
-- **Migrationen**: Aktueller Stand ist `0005`. Migration `0004` existiert als Stub (bereits in DB angewendet, enthielt `is_direct_debit`-Spalte). Migration `0005` nutzt `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (idempotent).
+- **Migrationen**: Aktueller Stand ist `0011` (Gutschriften). Migration `0004` existiert als Stub (bereits in DB angewendet, enthielt `is_direct_debit`-Spalte). Migration `0005` nutzt `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (idempotent).
 - **Watcher + DB-Session**: Jeder Watcher-Job öffnet eine eigene `AsyncSessionLocal`-Session und committed selbst — nicht die Request-Session von FastAPI verwenden.
 - **Docker umgeht UFW (Produktions-Server)**: Docker trägt `ports:`-Mappings direkt in iptables ein — an der UFW-Firewall vorbei. Jeder in `docker-compose.prod.yml` veröffentlichte Port ist damit weltweit erreichbar, auch wenn UFW ihn nicht erlaubt. Deshalb: Ports, die nicht öffentlich sein sollen (z.B. Postgres zum Debuggen), immer an localhost binden: `"127.0.0.1:5432:5432"` statt `"5432:5432"`.
 - **Uvicorn-Reload nur in der Entwicklung**: `backend/start.sh` startet den Reloader nur bei `UVICORN_RELOAD=1` (gesetzt in `docker-compose.yml`). Produktion laeuft ohne Reloader — und bewusst als **ein** Prozess: der APScheduler haengt im App-Lifespan, mehrere Worker wuerden Rechnungslauf und Ordnerueberwachung doppelt ausfuehren.

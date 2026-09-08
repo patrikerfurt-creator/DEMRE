@@ -44,6 +44,9 @@ export default function App() {
           <Route path="/invoices" element={<InvoiceListPage />} />
           <Route path="/invoices/new" element={<InvoiceCreatePage />} />
           <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+          <Route path="/credit-notes" element={<InvoiceListPage documentType="credit_note" />} />
+          <Route path="/credit-notes/new" element={<InvoiceCreatePage documentType="credit_note" />} />
+          <Route path="/credit-notes/:id" element={<InvoiceDetailPage />} />
           <Route path="/exports" element={<ExportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/creditors" element={<CreditorListPage />} />

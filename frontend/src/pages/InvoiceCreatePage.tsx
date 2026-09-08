@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, Loader2, ChevronLeft, Search, X, ChevronRight } from 'lucide-react'
 import api from '@/lib/api'
-import type { Customer, Article, CustomerListResponse } from '@/types'
+import type { Customer, Article, CustomerListResponse, DocumentType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/hooks/use-toast'
-import { formatCurrency, cn } from '@/lib/utils'
+import { formatCurrency, formatApiError, cn, DOCUMENT_TEXTS } from '@/lib/utils'
+
+/** Deutsches Dezimalkomma fuer parseFloat aufbereiten. */
+function normalizeDecimal(v: string) { return v.replace(',', '.') }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -293,8 +296,16 @@ function ArticleDrawer({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export function InvoiceCreatePage() {
+interface Props {
+  /** Belegart - dieselbe Seite legt Rechnungen und freie Gutschriften an. */
+  documentType?: DocumentType
+}
+
+export function InvoiceCreatePage({ documentType = 'invoice' }: Props) {
   const navigate = useNavigate()
+  const isCreditNote = documentType === 'credit_note'
+  const texts = DOCUMENT_TEXTS[documentType]
+  const basePath = isCreditNote ? '/credit-notes' : '/invoices'
 
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [invoiceDate, setInvoiceDate] = useState(today())
@@ -302,6 +313,7 @@ export function InvoiceCreatePage() {
   const [periodFrom, setPeriodFrom] = useState('')
   const [periodTo, setPeriodTo] = useState('')
   const [notes, setNotes] = useState('')
+  const [creditReason, setCreditReason] = useState('')
   const [items, setItems] = useState<LineItem[]>([newItem()])
   const [drawerKey, setDrawerKey] = useState<string | null>(null)
 
@@ -351,15 +363,11 @@ export function InvoiceCreatePage() {
   const createMutation = useMutation({
     mutationFn: (payload: unknown) => api.post('/invoices', payload),
     onSuccess: (res) => {
-      toast({ title: 'Rechnung erstellt', description: res.data.invoice_number })
-      navigate(`/invoices/${res.data.id}`)
+      toast({ title: `${texts.singular} erstellt`, description: res.data.invoice_number })
+      navigate(`${basePath}/${res.data.id}`)
     },
     onError: (err: any) => {
-      toast({
-        title: 'Fehler',
-        description: err?.response?.data?.detail ?? 'Unbekannter Fehler',
-        variant: 'destructive',
-      })
+      toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -374,6 +382,10 @@ export function InvoiceCreatePage() {
       toast({ title: 'Fehler', description: 'Mindestens eine Position erforderlich', variant: 'destructive' })
       return
     }
+    if (isCreditNote && !creditReason.trim()) {
+      toast({ title: 'Fehler', description: 'Bitte einen Gutschriftsgrund angeben', variant: 'destructive' })
+      return
+    }
     for (const it of items) {
       if (!it.description.trim()) {
         toast({ title: 'Fehler', description: 'Alle Positionen müssen eine Beschreibung haben', variant: 'destructive' })
@@ -386,12 +398,15 @@ export function InvoiceCreatePage() {
     }
 
     const payload = {
+      document_type: documentType,
       customer_id: customer.id,
       invoice_date: invoiceDate,
-      due_date: dueDate,
+      // Eine Gutschrift wird nicht fällig, die Spalte ist aber Pflicht
+      due_date: isCreditNote ? invoiceDate : dueDate,
       billing_period_from: periodFrom || null,
       billing_period_to: periodTo || null,
       notes: notes || null,
+      credit_reason: isCreditNote ? creditReason.trim() : null,
       status: 'draft',
       items: items.map((it, idx) => {
         const { net, vatAmt, gross } = calcItem(it)
@@ -427,20 +442,24 @@ export function InvoiceCreatePage() {
 
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/invoices')}>
+        <Button variant="ghost" size="sm" onClick={() => navigate(basePath)}>
           <ChevronLeft className="h-4 w-4 mr-1" /> Zurück
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-slate-900">Rechnung erstellen</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Manuelle Rechnung – wird als Entwurf gespeichert</p>
+          <h1 className="text-2xl font-bold text-slate-900">{texts.createTitle}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {isCreditNote
+              ? 'Gutschrift ohne Rechnungsbezug – wird als Entwurf gespeichert'
+              : 'Manuelle Rechnung – wird als Entwurf gespeichert'}
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate('/invoices')}>
+          <Button variant="outline" onClick={() => navigate(basePath)}>
             Abbrechen
           </Button>
           <Button onClick={handleSubmit} disabled={createMutation.isPending}>
             {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Rechnung speichern
+            {texts.singular} speichern
           </Button>
         </div>
       </div>
@@ -454,10 +473,12 @@ export function InvoiceCreatePage() {
 
         {/* Rechnungsdaten */}
         <div className="border rounded-lg p-5 bg-white space-y-4">
-          <h2 className="font-semibold text-slate-800">Rechnungsdaten</h2>
+          <h2 className="font-semibold text-slate-800">
+            {isCreditNote ? 'Gutschriftsdaten' : 'Rechnungsdaten'}
+          </h2>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Rechnungsdatum *</Label>
+              <Label>{texts.dateLabel} *</Label>
               <Input
                 type="date"
                 value={invoiceDate}
@@ -465,15 +486,27 @@ export function InvoiceCreatePage() {
                 required
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Fällig am *</Label>
-              <Input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                required
-              />
-            </div>
+            {isCreditNote ? (
+              <div className="space-y-1.5">
+                <Label>Gutschriftsgrund *</Label>
+                <Input
+                  placeholder="z.B. Kulanzgutschrift"
+                  value={creditReason}
+                  onChange={(e) => setCreditReason(e.target.value)}
+                  required
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Fällig am *</Label>
+                <Input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  required
+                />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Leistungszeitraum von</Label>
               <Input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
@@ -484,7 +517,7 @@ export function InvoiceCreatePage() {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Notiz (erscheint auf der Rechnung)</Label>
+            <Label>Notiz (erscheint auf dem Beleg)</Label>
             <textarea
               className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
               placeholder="z.B. Vielen Dank für Ihren Auftrag."
@@ -578,9 +611,16 @@ export function InvoiceCreatePage() {
                         />
                       </td>
                       <td className="px-3 py-2">
-                        <div className="h-8 px-2 flex items-center justify-end text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-md">
-                          {item.vat_rate ? `${parseFloat(item.vat_rate).toFixed(0)} %` : '–'}
-                        </div>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          className="h-8 text-sm text-right"
+                          placeholder="19"
+                          value={item.vat_rate}
+                          onChange={(e) =>
+                            updateItem(item._key, 'vat_rate', normalizeDecimal(e.target.value))
+                          }
+                        />
                       </td>
                       <td className="px-3 py-2 text-right font-medium text-slate-700 whitespace-nowrap">
                         {gross > 0 ? formatCurrency(gross) : '–'}
@@ -630,12 +670,12 @@ export function InvoiceCreatePage() {
 
         {/* Submit */}
         <div className="flex justify-end gap-2 pb-6">
-          <Button type="button" variant="outline" onClick={() => navigate('/invoices')}>
+          <Button type="button" variant="outline" onClick={() => navigate(basePath)}>
             Abbrechen
           </Button>
           <Button type="submit" disabled={createMutation.isPending}>
             {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Rechnung speichern
+            {texts.singular} speichern
           </Button>
         </div>
       </form>

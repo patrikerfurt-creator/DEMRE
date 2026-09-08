@@ -1,18 +1,29 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play, Search, Loader2, Download } from 'lucide-react'
+import { FilePlus, Play, Search, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
-import type { Invoice } from '@/types'
+import type { DocumentType, Invoice } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { toast } from '@/hooks/use-toast'
-import { formatDate, formatCurrency, INVOICE_STATUS_LABELS, INVOICE_STATUS_COLORS } from '@/lib/utils'
+import {
+  formatDate, formatCurrency, formatApiError,
+  INVOICE_STATUS_LABELS, INVOICE_STATUS_COLORS, DOCUMENT_TEXTS,
+} from '@/lib/utils'
 
-export function InvoiceListPage() {
+interface Props {
+  /** Belegart dieser Liste - dieselbe Seite bedient Rechnungen und Gutschriften. */
+  documentType?: DocumentType
+}
+
+export function InvoiceListPage({ documentType = 'invoice' }: Props) {
+  const isCreditNote = documentType === 'credit_note'
+  const texts = DOCUMENT_TEXTS[documentType]
+  const basePath = isCreditNote ? '/credit-notes' : '/invoices'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('all')
@@ -26,10 +37,11 @@ export function InvoiceListPage() {
   const [genAutoIssue, setGenAutoIssue] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['invoices', statusFilter, dateFrom, dateTo, search, page],
+    queryKey: ['invoices', documentType, statusFilter, dateFrom, dateTo, search, page],
     queryFn: () =>
       api.get<Invoice[]>('/invoices', {
         params: {
+          document_type: documentType,
           status: statusFilter !== 'all' ? statusFilter : undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
@@ -48,7 +60,7 @@ export function InvoiceListPage() {
       toast({ title: `${res.data.length} Rechnungen erstellt` })
     },
     onError: (err: any) => {
-      toast({ title: 'Fehler', description: err?.response?.data?.detail, variant: 'destructive' })
+      toast({ title: 'Fehler', description: formatApiError(err), variant: 'destructive' })
     },
   })
 
@@ -67,18 +79,28 @@ export function InvoiceListPage() {
 
   const invoices = Array.isArray(data) ? data : []
 
-  const statuses = ['all', 'draft', 'issued', 'sent', 'paid', 'overdue', 'cancelled']
+  const statuses = isCreditNote
+    ? ['all', 'draft', 'issued', 'sent', 'paid', 'cancelled']
+    : ['all', 'draft', 'issued', 'sent', 'paid', 'overdue', 'cancelled']
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Rechnungen</h1>
-          <p className="text-sm text-slate-500 mt-1">{invoices.length} Rechnungen</p>
+          <h1 className="text-2xl font-bold text-slate-900">{texts.listTitle}</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {invoices.length} {texts.plural}
+          </p>
         </div>
-        <Button onClick={() => setGenerateOpen(true)}>
-          <Play className="h-4 w-4 mr-2" /> Rechnungen erzeugen
-        </Button>
+        {isCreditNote ? (
+          <Button onClick={() => navigate('/credit-notes/new')}>
+            <FilePlus className="h-4 w-4 mr-2" /> Gutschrift erstellen
+          </Button>
+        ) : (
+          <Button onClick={() => setGenerateOpen(true)}>
+            <Play className="h-4 w-4 mr-2" /> Rechnungen erzeugen
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -118,7 +140,7 @@ export function InvoiceListPage() {
             <TableRow>
               <TableHead>Nummer</TableHead>
               <TableHead>Datum</TableHead>
-              <TableHead>Fällig</TableHead>
+              {isCreditNote ? <TableHead>Grund</TableHead> : <TableHead>Fällig</TableHead>}
               <TableHead>Leistungszeitraum</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Netto</TableHead>
@@ -136,7 +158,7 @@ export function InvoiceListPage() {
             ) : invoices.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
-                  Keine Rechnungen gefunden
+                  Keine {texts.plural} gefunden
                 </TableCell>
               </TableRow>
             ) : (
@@ -144,11 +166,17 @@ export function InvoiceListPage() {
                 <TableRow
                   key={inv.id}
                   className="cursor-pointer"
-                  onClick={() => navigate(`/invoices/${inv.id}`)}
+                  onClick={() => navigate(`${basePath}/${inv.id}`)}
                 >
                   <TableCell className="font-mono text-sm">{inv.invoice_number}</TableCell>
                   <TableCell>{formatDate(inv.invoice_date)}</TableCell>
-                  <TableCell>{formatDate(inv.due_date)}</TableCell>
+                  {isCreditNote ? (
+                    <TableCell className="text-xs text-muted-foreground max-w-[16rem] truncate">
+                      {inv.credit_reason || '–'}
+                    </TableCell>
+                  ) : (
+                    <TableCell>{formatDate(inv.due_date)}</TableCell>
+                  )}
                   <TableCell className="text-xs text-muted-foreground">
                     {inv.billing_period_from
                       ? `${formatDate(inv.billing_period_from)} – ${formatDate(inv.billing_period_to)}`

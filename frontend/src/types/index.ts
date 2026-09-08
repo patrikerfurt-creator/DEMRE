@@ -2,6 +2,7 @@ export type UserRole = 'admin' | 'user' | 'readonly'
 export type ContractStatus = 'active' | 'terminated' | 'suspended'
 export type BillingPeriod = 'monthly' | 'quarterly' | 'annual' | 'one-time'
 export type InvoiceStatus = 'draft' | 'issued' | 'sent' | 'paid' | 'overdue' | 'cancelled'
+export type DocumentType = 'invoice' | 'credit_note'
 export type RunType = 'invoice_generation' | 'sepa_export' | 'datev_export' | 'creditor_payment'
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed'
 
@@ -150,9 +151,16 @@ export interface InvoiceItem {
   total_gross: string
 }
 
+export interface LinkedDocument {
+  id: string
+  invoice_number: string
+  status: InvoiceStatus
+}
+
 export interface Invoice {
   id: string
   invoice_number: string
+  document_type: DocumentType
   contract_id?: string
   customer_id: string
   invoice_date: string
@@ -172,6 +180,12 @@ export interface Invoice {
   sent_at?: string
   paid_at?: string
   cancelled_at?: string
+  credit_note_of_id?: string
+  credit_reason?: string
+  /** Nur im Detailabruf: Nummer der gutgeschriebenen Rechnung */
+  credit_note_of_number?: string
+  /** Nur im Detailabruf: die Gutschrift zu dieser Rechnung */
+  credit_note?: LinkedDocument
   items: InvoiceItem[]
   created_at: string
   updated_at: string

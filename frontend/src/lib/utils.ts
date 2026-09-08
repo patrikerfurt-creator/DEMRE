@@ -2,6 +2,7 @@ import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { format, parseISO } from "date-fns"
 import { de } from "date-fns/locale"
+import type { DocumentType, InvoiceStatus } from "@/types"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -62,6 +63,76 @@ export const INVOICE_STATUS_COLORS: Record<string, string> = {
   paid: "bg-green-100 text-green-700",
   overdue: "bg-red-100 text-red-700",
   cancelled: "bg-orange-100 text-orange-700",
+}
+
+export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  invoice: "Rechnung",
+  credit_note: "Gutschrift",
+}
+
+/** Beschriftungen, die sich zwischen Rechnung und Gutschrift unterscheiden. */
+export const DOCUMENT_TEXTS = {
+  invoice: {
+    listTitle: "Rechnungen",
+    singular: "Rechnung",
+    plural: "Rechnungen",
+    numberLabel: "Rechnungsnummer",
+    dateLabel: "Rechnungsdatum",
+    itemsTitle: "Rechnungspositionen",
+    totalLabel: "Rechnungsbetrag brutto",
+    createTitle: "Rechnung erstellen",
+  },
+  credit_note: {
+    listTitle: "Gutschriften",
+    singular: "Gutschrift",
+    plural: "Gutschriften",
+    numberLabel: "Gutschriftsnummer",
+    dateLabel: "Gutschriftsdatum",
+    itemsTitle: "Gutschriftspositionen",
+    totalLabel: "Gutschriftsbetrag brutto",
+    createTitle: "Gutschrift erstellen",
+  },
+} as const
+
+/** Gutschriften werden nicht fällig - deshalb ein eigener Statusautomat. */
+// Rechnungen werden nicht direkt storniert - das macht ausschliesslich die
+// Gutschrift (Backend: _ALLOWED_TRANSITIONS in invoices.py).
+export const INVOICE_TRANSITIONS: Record<string, InvoiceStatus[]> = {
+  draft: ['issued'],
+  issued: ['sent', 'paid', 'overdue'],
+  sent: ['paid', 'overdue'],
+  overdue: ['paid'],
+  paid: [],
+  cancelled: [],
+}
+
+export const CREDIT_NOTE_TRANSITIONS: Record<string, InvoiceStatus[]> = {
+  draft: ['issued'],
+  issued: ['sent', 'paid', 'cancelled'],
+  sent: ['paid', 'cancelled'],
+  overdue: ['paid', 'cancelled'],
+  paid: [],
+  cancelled: [],
+}
+
+export function allowedTransitions(
+  documentType: DocumentType,
+  status: InvoiceStatus,
+): InvoiceStatus[] {
+  const map = documentType === 'credit_note' ? CREDIT_NOTE_TRANSITIONS : INVOICE_TRANSITIONS
+  return map[status] ?? []
+}
+
+/**
+ * Fehlermeldung aus einer Axios-/FastAPI-Antwort.
+ * Deckt sowohl String-`detail` als auch das Pydantic-v2-Array ab.
+ */
+export function formatApiError(err: any): string {
+  const detail = err?.response?.data?.detail
+  if (!detail) return 'Unbekannter Fehler'
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+  return JSON.stringify(detail)
 }
 
 export const CONTRACT_STATUS_LABELS: Record<string, string> = {
