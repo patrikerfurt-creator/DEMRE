@@ -8,6 +8,7 @@ import io
 import csv
 
 from app.config import settings
+from app.models.invoice import DocumentType
 
 
 # DATEV Gegenkonto mapping by VAT rate
@@ -58,7 +59,7 @@ class DatevService:
             "4",        # Sachkontenlänge (Index 13)
             period_from.strftime("%Y%m%d"),  # Datum von (Index 14)
             period_to.strftime("%Y%m%d"),    # Datum bis (Index 15)
-            f"RE {period_from.strftime('%m/%Y')}",  # Bezeichnung (Index 16)
+            f"RE/GS {period_from.strftime('%m/%Y')}",  # Bezeichnung (Index 16)
             "",         # Diktatzeichen   (Index 17)
             "1",        # Buchungstyp     (Index 18)
             "0",        # Rechnungslegungszweck (Index 19)
@@ -157,16 +158,27 @@ class DatevService:
                 or (customer.customer_number if customer else None)
                 or "10000"
             )
-            buchungstext = f"Re. {invoice.invoice_number}"[:60]
+            is_credit_note = getattr(invoice, "document_type", None) == DocumentType.credit_note
+            # Die GS-Nummer traegt die Belegart schon im Praefix
+            buchungstext = (
+                invoice.invoice_number if is_credit_note
+                else f"Re. {invoice.invoice_number}"
+            )[:60]
             belegfeld1 = invoice.invoice_number[:36]
 
             for group in vat_groups.values():
                 gegenkonto = get_gegenkonto(group["rate"])
-                umsatz = str(group["gross"]).replace(".", ",")
+                # DATEV akzeptiert kein Minus im Umsatzfeld - die Richtung
+                # steckt allein im Soll/Haben-Kennzeichen.
+                umsatz = str(
+                    abs(group["gross"]).quantize(Decimal("0.01"))
+                ).replace(".", ",")
 
                 row = [
                     umsatz,        # Umsatz
-                    "S",           # Soll/Haben
+                    # Gutschrift = Erloesminderung: Haben statt Soll,
+                    # Konto (Debitor) und Gegenkonto (Erloeskonto) bleiben gleich
+                    "H" if is_credit_note else "S",  # Soll/Haben
                     "EUR",         # WKZ
                     "",            # Kurs
                     "",            # Basis-Umsatz
