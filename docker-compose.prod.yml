@@ -37,7 +37,9 @@ services:
     restart: always
     depends_on: [backend]
     ports:
-      - "8081:80"
+      # Nur an localhost: der Host-nginx proxyt belegpilot24.de hierher.
+      # Ohne die Bindung waere 8081 weltweit offen (Docker umgeht UFW, siehe oben).
+      - "127.0.0.1:8081:80"
 
 volumes:
   pgdata:
