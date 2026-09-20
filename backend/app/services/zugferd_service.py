@@ -7,8 +7,18 @@ from datetime import date
 from typing import Optional
 import io
 import os
+from xml.sax.saxutils import escape
 
 from app.config import settings
+
+
+def _escape_xml(text) -> str:
+    """Text fuer ReportLab-Paragraph-Markup entschaerfen.
+
+    Paragraph interpretiert den Inhalt als Mini-XML — ein "&" oder "<" in einer
+    Beschreibung wuerde die PDF-Erzeugung sonst mit einem Parse-Fehler abbrechen.
+    """
+    return escape(str(text or ""))
 
 
 def _is_credit_note(invoice) -> bool:
@@ -512,6 +522,9 @@ class ZugferdService:
         # ── Items table ──
         item_headers = ["Pos.", "Beschreibung", "Menge", "Einheit", "EP netto", "MwSt.", "Gesamt netto"]
         item_data = [item_headers]
+        desc_style = ParagraphStyle(
+            "desc", fontSize=8, fontName="Helvetica", leading=10, splitLongWords=1,
+        )
 
         for item in sorted(invoice.items, key=lambda x: x.position):
             try:
@@ -522,13 +535,15 @@ class ZugferdService:
                 price_fmt = f"{float(item.unit_price_net):.2f} €"
                 total_fmt = f"{float(item.total_net):.2f} €"
 
+            # Immer als Paragraph: nur so bricht ReportLab lange Beschreibungen
+            # innerhalb der Spaltenbreite um (ein roher String laeuft ueber).
+            desc_markup = _escape_xml(item.description)
             if item.additional_text:
-                desc_cell = Paragraph(
-                    f"{item.description}<br/><i><font size='7' color='#666666'>{item.additional_text}</font></i>",
-                    ParagraphStyle("desc", fontSize=8, fontName="Helvetica", leading=11),
+                desc_markup += (
+                    f"<br/><i><font size='7' color='#666666'>"
+                    f"{_escape_xml(item.additional_text)}</font></i>"
                 )
-            else:
-                desc_cell = item.description
+            desc_cell = Paragraph(desc_markup, desc_style)
             item_data.append([
                 str(item.position),
                 desc_cell,
@@ -541,7 +556,8 @@ class ZugferdService:
 
         items_table = Table(
             item_data,
-            colWidths=[1 * cm, 5.3 * cm, 1.2 * cm, 2.5 * cm, 2.5 * cm, 1.2 * cm, 2.5 * cm],
+            # Summe = 16.5 cm = Satzspiegel (A4 minus 2.5/2.0 cm Raender)
+            colWidths=[1 * cm, 6.5 * cm, 1.3 * cm, 1.7 * cm, 2.5 * cm, 1.0 * cm, 2.5 * cm],
         )
         items_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a365d")),
