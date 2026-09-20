@@ -226,6 +226,16 @@ async def download_payment_run(
 
     ext = os.path.splitext(run.file_path)[1]
     media_type = "application/xml" if ext == ".xml" else "text/csv"
-    filename = f"export_{run_id}{ext}"
+
+    # DATEV-Buchungsstapel tragen den Zeitraum im Namen, damit beim
+    # Steuerberater auf einen Blick erkennbar ist, welche Periode drinsteckt:
+    # EXTF_JJJJMMTT_JJJJMMTT.csv
+    if run.run_type == RunType.datev_export and run.period_from and run.period_to:
+        filename = (
+            f"EXTF_{run.period_from.strftime('%Y%m%d')}"
+            f"_{run.period_to.strftime('%Y%m%d')}{ext}"
+        )
+    else:
+        filename = f"export_{run_id}{ext}"
 
     return FileResponse(run.file_path, media_type=media_type, filename=filename)
