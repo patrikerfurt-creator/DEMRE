@@ -10,7 +10,11 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "0012"
-down_revision: Union[str, None] = "0011"
+# Haengt bewusst an 0010 statt an 0011: Die Migration 0011 (invoice_attachments)
+# ist noch nicht committet und existiert nur auf dem Entwicklungsrechner. Mit
+# down_revision "0011" bricht Alembic in der Produktion mit KeyError ab.
+# Wenn 0011 spaeter committet wird, muss sie auf 0012 umgehaengt werden.
+down_revision: Union[str, None] = "0010"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
