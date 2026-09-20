@@ -6,6 +6,7 @@ from app.models.contract import Contract, ContractItem
 from app.models.invoice import Invoice, InvoiceItem, InvoiceStatus, DocumentType
 from app.models.payment_run import PaymentRun
 from app.models.status_change_log import StatusChangeLog
+from app.models.app_setting import AppSetting
 
 __all__ = [
     "Base",
@@ -21,4 +22,5 @@ __all__ = [
     "DocumentType",
     "PaymentRun",
     "StatusChangeLog",
+    "AppSetting",
 ]

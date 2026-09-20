@@ -16,6 +16,20 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("startup.begin")
+
+    # Gespeicherte Firmendaten aus der Datenbank auf das Settings-Objekt legen.
+    # Muss vor dem Scheduler laufen: der Rechnungslauf liest settings.company_*.
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.settings_store import load_into_settings
+        async with AsyncSessionLocal() as session:
+            count = await load_into_settings(session)
+        logger.info("settings.loaded", count=count)
+    except Exception as e:
+        # Darf den Start nicht verhindern: ohne Datenbankwerte greifen
+        # weiterhin die Umgebungsvariablen und die Defaults aus config.py.
+        logger.error("settings.load_failed", error=str(e))
+
     try:
         from app.scheduler.setup import start_scheduler
         start_scheduler()

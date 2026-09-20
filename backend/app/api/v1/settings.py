@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from app.api.deps import get_current_user, require_admin
+from app.database import get_db
 from app.models.user import User
 from app.config import settings
+from app.services import settings_store
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -23,12 +26,12 @@ class CompanySettings(BaseModel):
     company_bank_name: Optional[str] = None
     invoice_number_prefix: Optional[str] = None
     invoice_number_year_reset: Optional[bool] = None
+    # Nur lesend: werden serverseitig aus .env.prod gesetzt (siehe update_settings).
     datev_berater_number: Optional[str] = None
     datev_mandant_number: Optional[str] = None
 
 
-@router.get("", response_model=CompanySettings)
-async def get_settings(_: User = Depends(get_current_user)):
+def _current_settings() -> CompanySettings:
     return CompanySettings(
         company_name=settings.company_name,
         company_street=settings.company_street,
@@ -49,69 +52,29 @@ async def get_settings(_: User = Depends(get_current_user)):
     )
 
 
+@router.get("", response_model=CompanySettings)
+async def get_settings(_: User = Depends(get_current_user)):
+    return _current_settings()
+
+
 @router.put("", response_model=CompanySettings)
 async def update_settings(
     data: CompanySettings,
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    # Update in-memory settings (persists until restart unless .env is updated)
-    settings.company_name = data.company_name
-    settings.company_street = data.company_street
-    settings.company_zip = data.company_zip
-    settings.company_city = data.company_city
-    settings.company_country = data.company_country
-    settings.company_phone = data.company_phone
-    settings.company_email = data.company_email
-    settings.company_vat_id = data.company_vat_id
-    settings.company_tax_number = data.company_tax_number
-    settings.company_iban = data.company_iban
-    settings.company_bic = data.company_bic
-    settings.company_bank_name = data.company_bank_name
-    settings.datev_berater_number = data.datev_berater_number
-    settings.datev_mandant_number = data.datev_mandant_number
+    """Speichert die Firmendaten dauerhaft in der Tabelle app_settings.
 
-    # Also persist to .env file
-    import os
-    env_path = ".env"
-    lines = []
-    if os.path.exists(env_path):
-        with open(env_path) as f:
-            lines = f.readlines()
+    Frueher wurde hier in eine .env-Datei geschrieben. Die lag im Container
+    unter /app/.env, also in keinem Volume, und war nach jedem Rebuild weg.
 
-    env_updates = {
-        "COMPANY_NAME": data.company_name,
-        "COMPANY_STREET": data.company_street,
-        "COMPANY_ZIP": data.company_zip,
-        "COMPANY_CITY": data.company_city,
-        "COMPANY_COUNTRY": data.company_country,
-        "COMPANY_PHONE": data.company_phone or "",
-        "COMPANY_EMAIL": data.company_email or "",
-        "COMPANY_VAT_ID": data.company_vat_id or "",
-        "COMPANY_TAX_NUMBER": data.company_tax_number or "",
-        "COMPANY_IBAN": data.company_iban or "",
-        "COMPANY_BIC": data.company_bic or "",
-        "COMPANY_BANK_NAME": data.company_bank_name or "",
-        "DATEV_BERATER_NUMBER": data.datev_berater_number or "",
-        "DATEV_MANDANT_NUMBER": data.datev_mandant_number or "",
-    }
-
-    updated_keys = set()
-    new_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if "=" in stripped and not stripped.startswith("#"):
-            key = stripped.split("=")[0].strip()
-            if key in env_updates:
-                new_lines.append(f"{key}={env_updates[key]}\n")
-                updated_keys.add(key)
-                continue
-        new_lines.append(line)
-
-    for key, val in env_updates.items():
-        if key not in updated_keys:
-            new_lines.append(f"{key}={val}\n")
-
-    with open(env_path, "w") as f:
-        f.writelines(new_lines)
-
-    return data
+    Die DATEV-Berater-/Mandantennummer wird bewusst NICHT uebernommen. Sie
+    steht in .env.prod und liegt damit als echte Umgebungsvariable vor, die in
+    pydantic-settings Vorrang vor allem hier Gespeicherten hat. Ein Schreiben
+    waere nur bis zum naechsten Neustart wirksam und wuerde zwischenzeitlich
+    einen falschen DATEV-Stapel-Header erzeugen.
+    """
+    await settings_store.save(
+        db, {key: getattr(data, key) for key in settings_store.MANAGED_KEYS}
+    )
+    return _current_settings()

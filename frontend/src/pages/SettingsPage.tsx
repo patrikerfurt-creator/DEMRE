@@ -24,8 +24,6 @@ const schema = z.object({
   company_iban: z.string().optional(),
   company_bic: z.string().optional(),
   company_bank_name: z.string().optional(),
-  datev_berater_number: z.string().optional(),
-  datev_mandant_number: z.string().optional(),
 })
 type FormData = z.infer<typeof schema>
 
@@ -52,8 +50,6 @@ export function SettingsPage() {
       company_iban: settings.company_iban || '',
       company_bic: settings.company_bic || '',
       company_bank_name: settings.company_bank_name || '',
-      datev_berater_number: settings.datev_berater_number || '',
-      datev_mandant_number: settings.datev_mandant_number || '',
     } : undefined,
   })
 
@@ -160,13 +156,30 @@ export function SettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Beraternummer</Label>
-                <Input {...register('datev_berater_number')} placeholder="12345" />
+                <Input
+                  value={settings?.datev_berater_number || ''}
+                  placeholder="nicht konfiguriert"
+                  readOnly
+                  disabled
+                />
               </div>
               <div className="space-y-2">
                 <Label>Mandantennummer</Label>
-                <Input {...register('datev_mandant_number')} placeholder="67890" />
+                <Input
+                  value={settings?.datev_mandant_number || ''}
+                  placeholder="nicht konfiguriert"
+                  readOnly
+                  disabled
+                />
               </div>
             </div>
+            <p className="text-sm text-muted-foreground">
+              Diese Nummern werden serverseitig über{' '}
+              <span className="font-mono font-medium text-slate-700">DATEV_BERATER_NUMBER</span> und{' '}
+              <span className="font-mono font-medium text-slate-700">DATEV_MANDANT_NUMBER</span> in der Datei{' '}
+              <span className="font-mono font-medium text-slate-700">.env.prod</span> gesetzt, damit sie ein
+              Update überstehen. Eine Änderung wird erst nach einem Neustart des Backends wirksam.
+            </p>
           </CardContent>
         </Card>
 

@@ -111,11 +111,16 @@ cd /opt && sudo git clone https://github.com/patrikerfurt-creator/DEMRE.git && c
 # 2. Umgebungsvariablen setzen
 sudo cp .env.prod.example .env.prod
 sudo nano .env.prod
-# Pflichtfelder: POSTGRES_PASSWORD, DATABASE_URL, DATABASE_URL_SYNC, SECRET_KEY
+# Pflichtfelder: POSTGRES_PASSWORD, DATABASE_URL, DATABASE_URL_SYNC, SECRET_KEY,
+#               DATEV_BERATER_NUMBER, DATEV_MANDANT_NUMBER
 # SECRET_KEY erzeugen: openssl rand -hex 32
 # DATABASE_URL=postgresql+asyncpg://demre:PASSWORT@db:5432/demre
 # DATABASE_URL_SYNC=postgresql+psycopg2://demre:PASSWORT@db:5432/demre
 # Optional: ANTHROPIC_API_KEY für KI-Extraktion
+# Die DATEV-Nummern gehören zwingend hierher und NICHT in die Einstellungsseite:
+# Die Oberfläche schreibt nach /app/.env im Container, und dieser Pfad liegt in
+# keinem Volume — der Wert wäre nach dem nächsten Rebuild wieder weg und der
+# DATEV-Stapel ginge ohne Berater-/Mandantennummer zum Steuerberater raus.
 
 # 3. Ordner anlegen und starten
 sudo mkdir -p storage/invoices Eingangsrechnungen Belege
