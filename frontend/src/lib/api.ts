@@ -106,12 +106,25 @@ api.interceptors.response.use(
 
 /** Dokument mit Auth-Header laden und in neuem Tab öffnen */
 export async function openDocument(url: string): Promise<void> {
-  const response = await api.get(url, { responseType: 'blob' })
-  const contentType = response.headers['content-type'] || 'application/octet-stream'
-  const blob = new Blob([response.data], { type: contentType })
-  const objectUrl = URL.createObjectURL(blob)
-  window.open(objectUrl, '_blank')
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 15000)
+  // Tab synchron im Klick-Kontext öffnen, sonst blockiert der Popup-Blocker
+  // das window.open nach dem await (Symptom: "es passiert gar nichts").
+  const win = window.open('', '_blank')
+  try {
+    const response = await api.get(url, { responseType: 'blob' })
+    const contentType = response.headers['content-type'] || 'application/octet-stream'
+    const blob = new Blob([response.data], { type: contentType })
+    const objectUrl = URL.createObjectURL(blob)
+    if (win) {
+      win.location.href = objectUrl
+    } else {
+      // Popup trotzdem blockiert -> Fallback im selben Tab
+      window.open(objectUrl, '_blank')
+    }
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 15000)
+  } catch (err) {
+    if (win) win.close()
+    throw err
+  }
 }
 
 export default api

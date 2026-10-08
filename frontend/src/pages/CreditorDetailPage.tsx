@@ -1,12 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Building2, Phone, CreditCard, FileText } from 'lucide-react'
-import api from '@/lib/api'
+import { ArrowLeft, Building2, Phone, CreditCard, FileText, Eye } from 'lucide-react'
+import api, { openDocument } from '@/lib/api'
 import type { Creditor, IncomingInvoice, IncomingInvoiceListResponse } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { toast } from '@/hooks/use-toast'
 import { formatDate, formatCurrency } from '@/lib/utils'
 
 const INCOMING_STATUS_LABELS: Record<string, string> = {
@@ -158,39 +159,66 @@ export function CreditorDetailPage() {
                 <TableHead>Beschreibung</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Brutto</TableHead>
+                <TableHead className="w-16 text-center">Beleg</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {invoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
                     Keine Eingangsrechnungen vorhanden
                   </TableCell>
                 </TableRow>
               ) : (
-                invoices.map((inv) => (
-                  <TableRow
-                    key={inv.id}
-                    className="cursor-pointer hover:bg-slate-50"
-                    onClick={() => navigate(`/incoming-invoices?creditor_id=${id}`)}
-                  >
-                    <TableCell className="font-mono text-sm">{inv.document_number}</TableCell>
-                    <TableCell className="text-sm">{inv.external_invoice_number || '–'}</TableCell>
-                    <TableCell>{formatDate(inv.invoice_date)}</TableCell>
-                    <TableCell>{inv.due_date ? formatDate(inv.due_date) : '–'}</TableCell>
-                    <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
-                      {inv.description || '–'}
-                    </TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${INCOMING_STATUS_COLORS[inv.status] ?? ''}`}>
-                        {INCOMING_STATUS_LABELS[inv.status] ?? inv.status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(inv.total_gross)}
-                    </TableCell>
-                  </TableRow>
-                ))
+                invoices.map((inv) => {
+                  const hasDocument = !!inv.document_path
+                  const openInvoiceDocument = () => {
+                    if (!hasDocument) {
+                      toast({ title: 'Kein Dokument hinterlegt', description: 'Zu dieser Eingangsrechnung ist kein Beleg gespeichert.' })
+                      return
+                    }
+                    openDocument(`/incoming-invoices/${inv.id}/document`).catch(() => {
+                      toast({ title: 'Beleg konnte nicht geöffnet werden', description: 'Die hinterlegte Datei ist nicht abrufbar.', variant: 'destructive' })
+                    })
+                  }
+                  return (
+                    <TableRow
+                      key={inv.id}
+                      className={hasDocument ? 'cursor-pointer hover:bg-slate-50' : ''}
+                      onClick={hasDocument ? openInvoiceDocument : undefined}
+                      title={hasDocument ? 'Beleg öffnen' : undefined}
+                    >
+                      <TableCell className="font-mono text-sm">{inv.document_number}</TableCell>
+                      <TableCell className="text-sm">{inv.external_invoice_number || '–'}</TableCell>
+                      <TableCell>{formatDate(inv.invoice_date)}</TableCell>
+                      <TableCell>{inv.due_date ? formatDate(inv.due_date) : '–'}</TableCell>
+                      <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
+                        {inv.description || '–'}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${INCOMING_STATUS_COLORS[inv.status] ?? ''}`}>
+                          {INCOMING_STATUS_LABELS[inv.status] ?? inv.status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(inv.total_gross)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {hasDocument ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openInvoiceDocument() }}
+                            className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800"
+                            title="Beleg öffnen"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">–</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
               )}
             </TableBody>
           </Table>
