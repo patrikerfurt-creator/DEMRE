@@ -36,9 +36,11 @@ def start_scheduler():
     from app.scheduler.jobs.monthly_invoicing import schedule_monthly_job
     from app.scheduler.jobs.incoming_invoices_watcher import schedule_incoming_watcher
     from app.scheduler.jobs.expense_receipts_watcher import schedule_expense_receipts_watcher
+    from app.scheduler.jobs.contract_expiry import schedule_contract_expiry
     schedule_monthly_job(scheduler)
     schedule_incoming_watcher(scheduler)
     schedule_expense_receipts_watcher(scheduler)
+    schedule_contract_expiry(scheduler)
     if not scheduler.running:
         scheduler.start()
 
