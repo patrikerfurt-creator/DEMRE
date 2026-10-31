@@ -137,7 +137,18 @@ async def update_contract(
         setattr(contract, field, value)
 
     await db.flush()
-    await db.refresh(contract, ["items", "customer"])
+    # Nach dem flush den Vertrag frisch mit eager-geladenen Beziehungen holen.
+    # Ein selektives refresh(["items","customer"]) laesst serverseitig neu
+    # gesetzte Spalten wie updated_at "expired" zurueck; deren Lazy-Load beim
+    # Serialisieren (ContractResponse.model_validate) wuerde im async-Kontext
+    # einen MissingGreenlet-Fehler ausloesen. Das Neu-Query (wie in
+    # create_contract) laedt alle Spalten + Beziehungen sauber.
+    result = await db.execute(
+        select(Contract)
+        .options(selectinload(Contract.items), selectinload(Contract.customer))
+        .where(Contract.id == contract.id)
+    )
+    contract = result.scalar_one()
     return _to_response(contract)
 
 
@@ -175,7 +186,18 @@ async def terminate_contract(
         contract.end_date = date.today()
 
     await db.flush()
-    await db.refresh(contract, ["items", "customer"])
+    # Nach dem flush den Vertrag frisch mit eager-geladenen Beziehungen holen.
+    # Ein selektives refresh(["items","customer"]) laesst serverseitig neu
+    # gesetzte Spalten wie updated_at "expired" zurueck; deren Lazy-Load beim
+    # Serialisieren (ContractResponse.model_validate) wuerde im async-Kontext
+    # einen MissingGreenlet-Fehler ausloesen. Das Neu-Query (wie in
+    # create_contract) laedt alle Spalten + Beziehungen sauber.
+    result = await db.execute(
+        select(Contract)
+        .options(selectinload(Contract.items), selectinload(Contract.customer))
+        .where(Contract.id == contract.id)
+    )
+    contract = result.scalar_one()
     return _to_response(contract)
 
 
