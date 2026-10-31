@@ -137,7 +137,7 @@ export function formatApiError(err: any): string {
 
 export const CONTRACT_STATUS_LABELS: Record<string, string> = {
   active: "Aktiv",
-  terminated: "Gekündigt",
+  terminated: "Beendet",
   suspended: "Ausgesetzt",
 }
 
